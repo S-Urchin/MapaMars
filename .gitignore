@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Environment files (Supabase keys); .env.example is the shareable template
+.env
+.env.*
+!.env.example
+
+# Supabase CLI and deploy tool state
+supabase/.temp
+supabase/.branches
+.vercel
+.netlify
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

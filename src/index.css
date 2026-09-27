@@ -1,8 +1,24 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
-:root { font-family: 'Space Grotesk', sans-serif; color: #e9efec; background: #101b1d; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; --display: 'Space Grotesk', sans-serif; --body: 'DM Mono', monospace; }
+:root {
+  --black: #000;
+  --white: #fff;
+  --gray-1: rgba(255, 255, 255, 0.72);
+  --gray-2: rgba(255, 255, 255, 0.5);
+  --line: rgba(255, 255, 255, 0.16);
+  --sans: 'Space Grotesk', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+
+  color-scheme: dark;
+  font-family: var(--sans);
+  color: var(--white);
+  background: var(--black);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; min-width: 320px; }
-button, input { font: inherit; }
-::selection { background: #d7a65d; color: #172321; }
+body { margin: 0; min-width: 320px; background: var(--black); }
+button { font: inherit; color: inherit; }
+::selection { background: var(--white); color: var(--black); }

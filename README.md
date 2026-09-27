@@ -1,81 +1,87 @@
-# ORBIT
+# Mapa Mars
 
-Orbit is a React and TypeScript front end for exploring NASA mission and Earth observation data.
+An interactive 3D Mars globe built with React, TypeScript and three.js. Explore NASA landing sites, see the local time on Mars, and log your own missions to a shared log backed by Supabase.
 
 ## Requirements
 
 - Node.js 20 or newer
-- npm 10 or newer
+- A Supabase project
 
-Check your installed versions:
+## Setup
 
-```bash
-node --version
-npm --version
+1. In the Supabase dashboard, open **SQL Editor**, paste in [`supabase/schema.sql`](supabase/schema.sql) and run it.
+2. Under **Authentication → URL Configuration**, set the Site URL to `http://localhost:5173` and add `http://localhost:5173/**` to the Redirect URLs.
+3. Copy `.env.example` to `.env.local` and fill in your project's URL and anon (publishable) key from **Project Settings → API**:
+
+   ```
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-or-publishable-key
+   ```
+
+## Run
+
+```powershell
+.\Launch.ps1
 ```
 
-## Start Locally
+This installs dependencies on first run, starts the dev server, and opens http://localhost:5173. Add `-Share` to let other devices on your network open the site.
 
-From the project root, install the dependencies:
-
-```bash
-npm install
-```
-
-Start the Vite development server:
+## Commands
 
 ```bash
-npm run dev
-```
-
-Open the local URL shown in the terminal, usually:
-
-```text
-http://localhost:5173
-```
-
-The page supports hot reload, so changes in `src/` appear in the browser automatically.
-
-## Available Commands
-
-```bash
-npm run dev       # Start the local development server
-npm run build     # Type-check and create a production build
-npm run preview   # Preview the production build locally
+npm run dev       # Start the dev server
+npm run build     # Type-check and build for production
+npm run preview   # Preview the production build
 npm run lint      # Run Oxlint
 ```
 
-## Project Structure
+## Admins
+
+Admins can edit or delete anyone's missions. In the Supabase dashboard, open **Table Editor → profiles** and set `is_admin` to true for the account.
+
+## Custom Mars texture
+
+Put an equirectangular (2:1) Mars image at `public/resources/mars.jpg` to replace the generated surface. See [`public/resources/README.md`](public/resources/README.md).
+
+## Git and GitHub
+
+The project lives at https://github.com/S-Urchin/MapaMars on the `main` branch.
+
+Get a copy on a new machine:
+
+```powershell
+git clone https://github.com/S-Urchin/MapaMars.git
+cd MapaMars
+```
+
+Then follow [Setup](#setup). `.env.local` is not in the repository, so create it again.
+
+Push your changes:
+
+```powershell
+git add .
+git commit -m "Describe what you changed"
+git push
+```
+
+Get the latest changes from others:
+
+```powershell
+git pull
+```
+
+`.gitignore` keeps `node_modules`, build output and `.env.local` (your Supabase keys) out of the repository.
+
+## Project structure
 
 ```text
 src/
-  App.tsx                 Main dashboard UI
-  App.css                 Dashboard styles and responsive layout
-  index.css               Global styles and fonts
-  services/nasaApi.ts     NASA data types, mock data, and API boundary
+  pages/        Home, Globe, Missions and Account pages
+  components/   3D globe and procedural Mars texture
+  auth/         Signed-in user state
+  services/     Supabase calls for accounts and missions
+  data/         Landing sites, landmarks and Mars time formulas
+  lib/          Supabase client
+supabase/
+  schema.sql    Tables and access rules
 ```
-
-## NASA Backend Integration
-
-The front end currently uses mock data from `src/services/nasaApi.ts`. The `getMissions()` function is ready to call:
-
-```text
-/api/missions
-```
-
-When the backend is added, replace the mock data with the backend response while keeping the `Mission` type as the shared front-end contract.
-
-## Push to GitHub
-
-This project does not have Git history configured yet. Create an empty repository on GitHub first, then run these commands from the project root:
-
-```powershell
-git init
-git add .
-git commit -m "Initial Orbit frontend"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-git push -u origin main
-```
-
-Replace `YOUR_USERNAME` and `YOUR_REPOSITORY` with your GitHub username and repository name. The existing `.gitignore` keeps `node_modules` and build output out of the repository.
