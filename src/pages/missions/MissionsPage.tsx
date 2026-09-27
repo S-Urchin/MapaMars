@@ -71,7 +71,14 @@ export function MissionsPage() {
     if (screen.kind === 'edit' && canManage(mission)) {
       return <MissionForm user={user} authLoading={authLoading} mission={mission} onSaved={saved} onCancel={() => go(missionPath(mission.code))} />
     }
-    return <MissionView mission={mission} canManage={canManage(mission)} onDeleted={deleted} />
+    return (
+      <MissionView
+        mission={mission}
+        canManage={canManage(mission)}
+        onChanged={(m) => setLookup({ code: m.code, status: 'found', mission: m })}
+        onDeleted={deleted}
+      />
+    )
   }
 
   const problem = current?.status === 'missing'

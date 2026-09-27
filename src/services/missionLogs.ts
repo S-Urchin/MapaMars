@@ -11,9 +11,14 @@ export type MissionLog = {
   lon: number
   date: string // YYYY-MM-DD, may be empty
   objective: string
+  status: MissionStatus
+  completedAt?: string
   createdAt: string
   updatedAt?: string
 }
+
+/** Open missions are private (opened by code); complete missions are visible to everyone. */
+export type MissionStatus = 'open' | 'complete'
 
 export type MissionFields = Pick<MissionLog, 'code' | 'name' | 'target' | 'lat' | 'lon' | 'date' | 'objective'>
 
@@ -30,11 +35,13 @@ type Row = {
   lon: number
   date: string | null
   objective: string
+  status: MissionStatus
+  completed_at: string | null
   created_at: string
   updated_at: string | null
 }
 
-const COLUMNS = 'id, owner_id, code, name, target, lat, lon, date, objective, created_at, updated_at, author:profiles(username)'
+const COLUMNS = 'id, owner_id, code, name, target, lat, lon, date, objective, status, completed_at, created_at, updated_at, author:profiles(username)'
 
 function fromRow(r: Row, username: string | undefined): MissionLog {
   return {
@@ -48,6 +55,8 @@ function fromRow(r: Row, username: string | undefined): MissionLog {
     lon: r.lon,
     date: r.date ?? '',
     objective: r.objective,
+    status: r.status,
+    completedAt: r.completed_at ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at ?? undefined,
   }
@@ -107,6 +116,28 @@ export async function fetchMyMissions(userId: string, signal?: AbortSignal): Pro
   const { data, error } = await query
   if (error) fail(error)
   return (data as unknown as RowWithAuthor[]).map(fromJoined)
+}
+
+/** Completed missions, newest first. Public: works signed out. */
+export async function fetchCompletedMissions(signal?: AbortSignal, limit = 50): Promise<MissionLog[]> {
+  let query = supabase
+    .from('mission_logs')
+    .select(COLUMNS)
+    .eq('status', 'complete')
+    .order('completed_at', { ascending: false })
+    .limit(limit)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
+  if (error) fail(error)
+  return (data as unknown as RowWithAuthor[]).map(fromJoined)
+}
+
+/** Marks a mission complete (public) or open again (private). The database stamps the completion time. */
+export async function setMissionStatus(id: string, status: MissionStatus): Promise<MissionLog> {
+  const { data, error } = await supabase.from('mission_logs').update({ status }).eq('id', id).select(COLUMNS)
+  if (error) fail(error)
+  if (!data?.length) throw new Error('You can only change your own missions (or it was already deleted).')
+  return fromJoined(data[0] as unknown as RowWithAuthor)
 }
 
 /** True when the code is well-formed and no other mission uses it. */

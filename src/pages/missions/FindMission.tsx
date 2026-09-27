@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { CodeInput } from '../../components/CodeInput'
 import { formatCode, sanitizeCode } from '../../lib/missionCode'
 import type { User } from '../../services/auth'
-import { fetchMyMissions, type MissionLog } from '../../services/missionLogs'
+import { fetchCompletedMissions, fetchMyMissions, type MissionLog } from '../../services/missionLogs'
 import { go, missionPath } from './shared'
 
 type Props = {
@@ -17,6 +17,17 @@ export function FindMission({ user, initialCode, problem, notice, onDismissNotic
   const [raw, setRaw] = useState(() => sanitizeCode(initialCode))
   const [mine, setMine] = useState<MissionLog[] | null>(null)
   const [mineError, setMineError] = useState<string | null>(null)
+  const [completed, setCompleted] = useState<MissionLog[] | null>(null)
+  const [completedError, setCompletedError] = useState<string | null>(null)
+
+  // Completed missions are public, so everyone sees this list
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchCompletedMissions(controller.signal)
+      .then(setCompleted)
+      .catch((err: Error) => { if (err.name !== 'AbortError') setCompletedError(err.message) })
+    return () => controller.abort()
+  }, [])
 
   // Signed-in users get their own missions listed, so they never lose a code.
   // Keyed on the id so a refreshed user object doesn't cancel and restart the request.
@@ -74,26 +85,58 @@ export function FindMission({ user, initialCode, problem, notice, onDismissNotic
       </section>
 
       {user && (
-        <section className="my-missions" aria-label="Your missions">
-          <h2>Your missions</h2>
-          {mineError && <p className="form-error">{mineError}</p>}
-          {!mine && !mineError && <p className="muted">Loading…</p>}
-          {mine?.length === 0 && <p className="muted">You haven't created any missions yet.</p>}
-          {mine && mine.length > 0 && (
-            <ul>
-              {mine.map((m) => (
-                <li key={m.id}>
-                  <a href={missionPath(m.code)}>
-                    <span className="mono-code">{m.code}</span>
-                    <span className="my-mission-name">{m.name}</span>
-                    <span className="muted">{m.target}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <MissionList
+          title="Your missions"
+          missions={mine}
+          error={mineError}
+          empty="You haven't created any missions yet."
+          showStatus
+        />
       )}
+
+      <MissionList
+        title="Completed missions"
+        missions={completed}
+        error={completedError}
+        empty="No completed missions yet."
+        showAuthor
+      />
     </main>
+  )
+}
+
+type ListProps = {
+  title: string
+  missions: MissionLog[] | null
+  error: string | null
+  empty: string
+  showStatus?: boolean
+  showAuthor?: boolean
+}
+
+function MissionList({ title, missions, error, empty, showStatus, showAuthor }: ListProps) {
+  return (
+    <section className="my-missions" aria-label={title}>
+      <h2>{title}</h2>
+      {error && <p className="form-error">{error}</p>}
+      {!missions && !error && <p className="muted">Loading…</p>}
+      {missions?.length === 0 && <p className="muted">{empty}</p>}
+      {missions && missions.length > 0 && (
+        <ul>
+          {missions.map((m) => (
+            <li key={m.id}>
+              <a href={missionPath(m.code)}>
+                <span className="mono-code">{m.code}</span>
+                <span className="my-mission-name">
+                  {m.name}
+                  {showStatus && <span className={`status-badge is-${m.status}`}>{m.status === 'complete' ? 'Complete' : 'Open'}</span>}
+                </span>
+                <span className="muted">{showAuthor ? `${m.target} · by ${m.commander}` : m.target}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

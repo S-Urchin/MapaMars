@@ -307,7 +307,13 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 }
 .my-missions a:hover { border-color: var(--white); }
 .my-missions .mono-code { grid-row: span 2; align-self: center; font-size: 18px; }
-.my-mission-name { overflow-wrap: anywhere; }
+.my-mission-name { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; }
+
+.status-badge { padding: 2px 9px; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; border-radius: 999px; }
+.status-badge.is-open { color: var(--gray-1); border: 1px solid var(--line); }
+.status-badge.is-complete { color: var(--black); background: var(--white); }
+.status-action { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.status-action p { margin: 0; font-size: 13px; line-height: 1.5; }
 .my-missions .muted { font-size: 13px; }
 
 /* Code field in the create / edit form */

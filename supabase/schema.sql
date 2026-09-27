@@ -62,6 +62,13 @@ create unique index if not exists mission_logs_code_idx on public.mission_logs (
 
 create index if not exists mission_logs_owner_idx on public.mission_logs (owner_id, created_at desc);
 
+-- Mission status: 'open' (private, opened by code) or 'complete' (visible to everyone)
+alter table public.mission_logs add column if not exists status text not null default 'open';
+alter table public.mission_logs drop constraint if exists mission_logs_status_check;
+alter table public.mission_logs add constraint mission_logs_status_check check (status in ('open', 'complete'));
+alter table public.mission_logs add column if not exists completed_at timestamptz;
+create index if not exists mission_logs_completed_idx on public.mission_logs (completed_at desc) where status = 'complete';
+
 -- Stamp edits on the server so clients can't fake the time
 create or replace function public.touch_updated_at()
 returns trigger
@@ -71,6 +78,13 @@ begin
   new.updated_at := now();
   new.created_at := old.created_at;
   new.owner_id := old.owner_id; -- missions can't be handed to someone else
+  -- The completion time is set here, never by the client
+  new.completed_at := old.completed_at;
+  if new.status = 'complete' and old.status <> 'complete' then
+    new.completed_at := now();
+  elsif new.status = 'open' then
+    new.completed_at := null;
+  end if;
   return new;
 end;
 $$;
@@ -99,7 +113,7 @@ drop policy if exists "Profiles are public" on public.profiles;
 create policy "Profiles are public" on public.profiles
   for select using (true);
 
--- Missions are private: only the author (and admins) can list them.
+-- Open missions are private: only the author (and admins) can list them.
 -- Everyone else opens a mission by its code through get_mission_by_code() below.
 drop policy if exists "Missions are public" on public.mission_logs;
 drop policy if exists "Authors and admins read missions" on public.mission_logs;
@@ -107,10 +121,16 @@ create policy "Authors and admins read missions" on public.mission_logs
   for select to authenticated
   using (owner_id = auth.uid() or public.is_admin());
 
--- Signed-in users can log missions as themselves
+-- Completed missions can be seen by everyone, signed in or not
+drop policy if exists "Completed missions are public" on public.mission_logs;
+create policy "Completed missions are public" on public.mission_logs
+  for select to anon, authenticated
+  using (status = 'complete');
+
+-- Signed-in users can log missions as themselves; new missions always start open
 drop policy if exists "Users log their own missions" on public.mission_logs;
 create policy "Users log their own missions" on public.mission_logs
-  for insert to authenticated with check (owner_id = auth.uid());
+  for insert to authenticated with check (owner_id = auth.uid() and status = 'open');
 
 -- Authors (and admins) can edit and delete
 drop policy if exists "Authors and admins edit missions" on public.mission_logs;
@@ -129,17 +149,20 @@ create policy "Authors and admins delete missions" on public.mission_logs
 
 -- ---------- Mission code lookups ----------
 
--- Open one mission by its exact code (works signed out too)
-create or replace function public.get_mission_by_code(p_code text)
+-- Open one mission by its exact code (works signed out too).
+-- Dropped first because its result columns changed when status was added.
+drop function if exists public.get_mission_by_code(text);
+create function public.get_mission_by_code(p_code text)
 returns table (
   id uuid, owner_id uuid, code text, name text, target text, lat double precision, lon double precision,
-  date date, objective text, created_at timestamptz, updated_at timestamptz, username text
+  date date, objective text, status text, completed_at timestamptz, created_at timestamptz, updated_at timestamptz, username text
 )
 language sql
 stable
 security definer set search_path = ''
 as $$
-  select m.id, m.owner_id, m.code, m.name, m.target, m.lat, m.lon, m.date, m.objective, m.created_at, m.updated_at, p.username
+  select m.id, m.owner_id, m.code, m.name, m.target, m.lat, m.lon, m.date, m.objective, m.status, m.completed_at,
+    m.created_at, m.updated_at, p.username
   from public.mission_logs m
   join public.profiles p on p.id = m.owner_id
   where m.code = upper(trim(p_code));
