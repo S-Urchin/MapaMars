@@ -55,8 +55,10 @@ type Row = {
   crew?: { count: number }[]
 }
 
+// `profiles!owner_id` picks the author: missions also reach profiles through the crew table,
+// so the relationship has to be named.
 const COLUMNS =
-  'id, owner_id, code, name, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles(username), crew:mission_members(count)'
+  'id, owner_id, code, name, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
 
 function fromRow(r: Row): MissionLog {
   return {
