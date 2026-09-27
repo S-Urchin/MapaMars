@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/context'
+import { PasswordInput } from '../components/PasswordInput'
+import { PASSWORD_MAX_LENGTH, PASSWORD_RULES, passwordIsStrong } from '../services/auth'
 
 export function AccountPage() {
   const { user, loading, signIn, signUp, signOut } = useAuth()
@@ -96,19 +98,34 @@ export function AccountPage() {
         )}
         <label>
           <span>Password</span>
-          <input
-            type="password"
+          <PasswordInput
             value={password}
-            onChange={(e) => { setPassword(e.target.value); clearError() }}
+            onChange={(value) => { setPassword(value); clearError() }}
             autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-            required
-            minLength={mode === 'signup' ? 8 : undefined}
-            maxLength={72}
+            maxLength={PASSWORD_MAX_LENGTH}
+            describedBy={mode === 'signup' ? 'password-rules' : undefined}
           />
-          {mode === 'signup' && <em className="muted">At least 8 characters.</em>}
         </label>
+        {mode === 'signup' && (
+          <ul className="password-rules" id="password-rules" aria-label="Password requirements">
+            {PASSWORD_RULES.map((rule) => {
+              const met = rule.test(password)
+              return (
+                <li key={rule.label} className={met ? 'is-met' : ''}>
+                  <span className="rule-mark" aria-hidden="true">{met ? '✓' : '○'}</span>
+                  {rule.label}
+                  <span className="visually-hidden">{met ? ' (done)' : ' (not yet)'}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button" type="submit" disabled={busy || !email.trim() || !password || (mode === 'signup' && !username.trim())}>
+        <button
+          className="button"
+          type="submit"
+          disabled={busy || !email.trim() || !password || (mode === 'signup' && (!username.trim() || !passwordIsStrong(password)))}
+        >
           {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
         </button>
       </form>

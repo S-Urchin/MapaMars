@@ -201,6 +201,33 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .account-page > p { margin: 0 0 24px; line-height: 1.55; }
 .account-page .mission-form em { font-size: 12px; }
 .account-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.password-field { position: relative; display: block; }
+.mission-form .password-field input { padding-right: 48px; }
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transform: translateY(-50%);
+  color: var(--gray-2);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.password-toggle:hover { color: var(--white); }
+.password-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.password-rules { list-style: none; margin: -4px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--gray-2); }
+.password-rules li { display: flex; align-items: center; gap: 8px; }
+.password-rules li.is-met { color: var(--white); }
+.rule-mark { width: 14px; text-align: center; font-family: var(--mono); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .account-page .switch-mode { margin: 24px 0 0; font-size: 14px; }
 
 .mission-globe { grid-area: globe; min-width: 0; }
