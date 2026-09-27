@@ -77,6 +77,8 @@ function toRow(f: MissionFields) {
 }
 
 function fail(error: { message: string; code?: string }): never {
+  // A cancelled request (page moved on) isn't a failure; keep it recognisable as an AbortError
+  if (error.message.includes('AbortError')) throw new DOMException('Request cancelled', 'AbortError')
   console.error('[missions]', error)
   if (error.code === '23505') throw new Error('That mission code was just taken. Pick another one.')
   // Function or column missing: the database is older than this version of the app

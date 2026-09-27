@@ -18,15 +18,17 @@ export function FindMission({ user, initialCode, problem, notice, onDismissNotic
   const [mine, setMine] = useState<MissionLog[] | null>(null)
   const [mineError, setMineError] = useState<string | null>(null)
 
-  // Signed-in users get their own missions listed, so they never lose a code
+  // Signed-in users get their own missions listed, so they never lose a code.
+  // Keyed on the id so a refreshed user object doesn't cancel and restart the request.
+  const userId = user?.id
   useEffect(() => {
-    if (!user) return
+    if (!userId) return
     const controller = new AbortController()
-    fetchMyMissions(user.id, controller.signal)
+    fetchMyMissions(userId, controller.signal)
       .then(setMine)
       .catch((err: Error) => { if (err.name !== 'AbortError') setMineError(err.message) })
     return () => controller.abort()
-  }, [user])
+  }, [userId])
 
   const open = (code: string) => {
     onDismissNotice()

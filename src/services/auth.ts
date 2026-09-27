@@ -25,8 +25,9 @@ function friendly(message: string) {
   if (m.includes('already registered') || m.includes('already been registered')) return 'An account with that email already exists. Try signing in.'
   if (m.includes('database error saving new user')) return 'That username is taken. Pick another one.'
   if (m.includes('rate limit') || m.includes('too many')) return 'Too many attempts. Wait a few minutes and try again.'
-  if (m.includes('failed to fetch') || m === '{}') {
-    return 'The request to Supabase did not complete. If your connection is fine, check Supabase → Logs → Auth for the error, or try disabling ad blockers for this site.'
+  if (m.includes('failed to fetch') || m === '{}' || m.includes('abort') || m.includes('lock')) {
+    // Keep the underlying reason visible; it's what tells us why the request failed
+    return `The request to Supabase did not complete (${message}). Reload the page and try again.`
   }
   return message
 }
@@ -66,7 +67,16 @@ export async function signUp(email: string, username: string, password: string):
     // The confirmation link brings people back here; this URL must be allowed in Supabase (Authentication -> URL Configuration)
     options: { data: { username }, emailRedirectTo: `${window.location.origin}${window.location.pathname}` },
   })
-  if (error) fail(error)
+  if (error) {
+    // Sending the confirmation email can be slow enough that the reply never reaches the browser,
+    // even though the account was created. If the new username now exists, treat it as success.
+    const lostReply = error.name === 'AuthRetryableFetchError' || error.message.toLowerCase().includes('failed to fetch')
+    if (lostReply && (await usernameTaken(username).catch(() => false))) {
+      console.warn('[auth] sign-up reply was lost, but the account exists; asking the user to confirm their email', error)
+      return { needsConfirmation: true }
+    }
+    fail(error)
+  }
   // With email confirmation on, Supabase hides whether the email already exists by returning a user with no identities
   if (data.user && data.user.identities?.length === 0) throw new Error('An account with that email already exists. Try signing in.')
   return { needsConfirmation: !data.session }
