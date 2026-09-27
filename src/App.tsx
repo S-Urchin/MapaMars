@@ -5,17 +5,19 @@ import { useAuth } from './auth/context'
 import { AccountPage } from './pages/AccountPage'
 import { GlobePage } from './pages/GlobePage'
 import { HomePage } from './pages/HomePage'
-import { MissionsPage } from './pages/MissionsPage'
+import { MissionsPage } from './pages/missions/MissionsPage'
 
 const routes = [
   { hash: '#/', label: 'Home', page: HomePage, inNav: true },
-  { hash: '#/globe', label: 'Globe', page: GlobePage, inNav: true },
   { hash: '#/missions', label: 'Missions', page: MissionsPage, inNav: true },
+  { hash: '#/globe', label: 'Globe', page: GlobePage, inNav: true },
   { hash: '#/account', label: 'Account', page: AccountPage, inNav: false },
 ]
 
+// Pages can have sub-paths, e.g. #/missions/ABC-123 belongs to #/missions
 function readRoute() {
-  return routes.find((r) => r.hash === window.location.hash) ?? routes[0]
+  const hash = window.location.hash
+  return routes.find((r) => r.hash !== '#/' && (hash === r.hash || hash.startsWith(`${r.hash}/`))) ?? routes[0]
 }
 
 function AccountLink({ current }: { current: boolean }) {

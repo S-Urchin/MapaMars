@@ -137,7 +137,7 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
-  grid-template-areas: 'form globe' 'log log';
+  grid-template-areas: 'form globe';
   align-content: start;
   gap: 32px;
   padding: 32px clamp(16px, 3vw, 32px) 64px;
@@ -175,7 +175,6 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .mission-form .button { align-self: flex-start; border: 0; cursor: pointer; }
 .mission-form .button:disabled { opacity: 0.35; cursor: not-allowed; }
 .form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.as-user { margin: 0; font-size: 13px; }
 .plain { color: var(--white); font-weight: 500; }
 .signin-prompt { padding: 20px; border: 1px solid var(--line); border-radius: 8px; }
 .signin-prompt p { margin: 0 0 16px; line-height: 1.55; color: var(--gray-1); }
@@ -233,61 +232,116 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .mission-globe { grid-area: globe; min-width: 0; }
 .mission-globe .globe-frame { height: min(640px, calc(100vh - 140px)); }
 
-.mission-log { grid-area: log; border-top: 1px solid var(--line); padding-top: 28px; }
-.mission-log-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-.mission-log-head h2 { margin: 0; font-size: 22px; font-weight: 500; }
-.mission-log-head .muted { font-size: 13px; }
-.mission-log ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.log-card {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+button.button { border: 0; font: inherit; font-weight: 500; cursor: pointer; }
+button.button:disabled,
+button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
+.link-button:disabled { opacity: 0.5; cursor: default; }
+.mono-code { font-family: var(--mono); letter-spacing: 0.08em; }
+
+/* Code entry: _ _ _ - _ _ _ */
+.code-input { position: relative; display: flex; justify-content: center; cursor: text; }
+.code-boxes { display: flex; align-items: center; gap: 8px; }
+.code-box {
+  width: 48px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  font: 500 28px var(--mono);
+  color: var(--white);
   border: 1px solid var(--line);
   border-radius: 8px;
+  transition: border-color 0.15s;
 }
-.log-card:hover { border-color: rgba(255, 255, 255, 0.4); }
-.log-card.is-selected { border-color: var(--white); }
-.log-card.is-editing { border-style: dashed; border-color: var(--white); }
-.log-card-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  text-align: left;
-  background: none;
+.code-box.is-filled { border-color: rgba(255, 255, 255, 0.45); }
+.code-box.is-active { border-color: var(--white); box-shadow: 0 0 0 1px var(--white); }
+.code-dash { width: 18px; text-align: center; font: 500 28px var(--mono); color: var(--gray-2); }
+.code-input.is-invalid .code-box.is-filled { border-style: dashed; border-color: var(--white); }
+.code-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
   border: 0;
-  border-radius: 8px;
-  cursor: pointer;
+  color: transparent;
+  caret-color: transparent;
+  background: transparent;
+  cursor: text;
 }
-.log-actions {
+
+/* Find screen */
+.mission-center {
+  flex: 1;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
+  gap: 24px;
+  padding: 56px 16px 64px;
+  text-align: center;
 }
-.log-actions button {
-  padding: 4px 12px;
-  font-size: 13px;
-  background: none;
+.find-mission { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
+.find-mission h1 { margin: 0; font-size: 32px; font-weight: 500; }
+.find-mission > p { margin: -8px 0 4px; }
+.notice { margin: 0; padding: 10px 14px; font-size: 14px; border: 1px solid var(--line); border-radius: 6px; }
+.or-divider { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 320px; color: var(--gray-2); font-size: 13px; }
+.or-divider::before,
+.or-divider::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
+.new-mission-cta { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.new-mission-cta p { margin: 0; font-size: 13px; }
+.new-mission-cta .button-outline { display: inline-block; }
+
+.my-missions { width: 100%; margin-top: 16px; padding-top: 24px; border-top: 1px solid var(--line); text-align: left; }
+.my-missions h2 { margin: 0 0 12px; font-size: 13px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray-2); }
+.my-missions ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.my-missions a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 16px;
+  padding: 12px 14px;
+  color: var(--white);
+  text-decoration: none;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  cursor: pointer;
+  border-radius: 8px;
 }
-.log-actions button:hover:not(:disabled) { border-color: var(--white); }
-.log-actions button:disabled { opacity: 0.4; cursor: default; }
-.log-actions button.danger { color: var(--black); background: var(--white); border-color: var(--white); }
-.card-error { margin: 0 16px 16px; }
-.log-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.log-card h3 { margin: 0; font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
-.tag { flex: none; padding: 2px 8px; font-size: 11px; color: var(--black); background: var(--white); border-radius: 999px; }
-.log-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font-size: 13px; color: var(--gray-1); }
-.mono { font-family: var(--mono); font-size: 12px; }
-.log-objective { margin: 0; line-height: 1.55; color: var(--gray-1); overflow-wrap: anywhere; }
-.log-time { margin: auto 0 0; font-size: 12px; }
+.my-missions a:hover { border-color: var(--white); }
+.my-missions .mono-code { grid-row: span 2; align-self: center; font-size: 18px; }
+.my-mission-name { overflow-wrap: anywhere; }
+.my-missions .muted { font-size: 13px; }
+
+/* Code field in the create / edit form */
+.code-field { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.field-label { align-self: flex-start; font-size: 13px; color: var(--gray-1); }
+.code-status { margin: 0; font-size: 13px; color: var(--gray-2); text-align: center; }
+.code-status.is-available { color: var(--white); }
+.code-status.is-taken { color: var(--white); font-weight: 500; }
+.code-field .link-button { font-size: 13px; }
+
+/* Mission view */
+.mission-view {
+  flex: 1;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  grid-template-areas: 'detail globe';
+  align-content: start;
+  gap: 32px;
+  padding: 32px clamp(16px, 3vw, 32px) 64px;
+}
+.mission-detail { grid-area: detail; display: flex; flex-direction: column; }
+.back-link { align-self: flex-start; margin-bottom: 24px; font-size: 14px; color: var(--gray-1); text-decoration: none; }
+.back-link:hover { color: var(--white); }
+.code-badge { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.code-badge .mono-code { padding: 6px 12px; font-size: 22px; border: 1px solid var(--white); border-radius: 6px; }
+.code-badge .link-button { font-size: 13px; }
+.mission-detail h1 { margin: 0 0 4px; font-size: 32px; font-weight: 500; overflow-wrap: anywhere; }
+.mission-detail > .muted { margin: 0; }
+.plain-dd { font-family: var(--sans) !important; }
+.detail-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.mission-detail .form-error { margin-top: 12px; }
 
 /* ---------- Globe canvas & markers ---------- */
 
@@ -346,11 +400,16 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
   .globe-page { grid-template-columns: 200px minmax(0, 1fr); }
   .globe-stage { grid-column: 1 / -1; order: -1; }
   .globe-frame { height: 70vh; }
-  .missions-page { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'globe' 'form' 'log'; }
+  .missions-page { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'form' 'globe'; }
+  .mission-view { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'detail' 'globe'; }
   .mission-globe .globe-frame { height: min(60vh, 100vw); min-height: 340px; }
 }
 
 @media (max-width: 720px) {
+  .code-boxes { gap: 6px; }
+  .code-box { width: 40px; height: 52px; font-size: 24px; }
+  .code-dash { width: 12px; font-size: 24px; }
+  .mission-center { padding-top: 32px; }
   .nav { flex-wrap: wrap; row-gap: 10px; }
   .nav-links { flex-wrap: wrap; }
   .nav-links a { padding: 6px 10px; }
