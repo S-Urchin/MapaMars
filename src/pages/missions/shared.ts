@@ -9,6 +9,9 @@ export const CUSTOM_TARGET = 'custom'
 
 export const missionPath = (code?: string, action?: 'edit') => ['#/missions', code, action].filter(Boolean).join('/')
 
+/** Address for a mission opened from the browse list, where you don't know its code. */
+export const missionIdPath = (id: string) => `#/missions/m/${id}`
+
 export function go(path: string) {
   window.location.hash = path
 }

@@ -19,7 +19,7 @@ const features = [
   },
   {
     title: 'Log a mission',
-    text: 'Plan your own mission, pick a target on the globe, and give it a code like MRS-204. Share the code while it’s open; once it’s complete, everyone can see it.',
+    text: 'Plan a mission, pick a target on the globe, and give it a code like MRS-204. Browse other missions and their crews, and join one with its code.',
   },
 ]
 

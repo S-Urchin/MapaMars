@@ -312,6 +312,60 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .status-badge { padding: 2px 9px; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; border-radius: 999px; }
 .status-badge.is-open { color: var(--gray-1); border: 1px solid var(--line); }
 .status-badge.is-complete { color: var(--black); background: var(--white); }
+.my-missions a.no-code { grid-template-columns: minmax(0, 1fr); }
+
+.browse { width: 100%; margin-top: 16px; padding-top: 24px; border-top: 1px solid var(--line); text-align: left; }
+.browse-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.browse-head h2 { margin: 0; font-size: 13px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray-2); }
+.browse-note { margin: 10px 0 0; font-size: 13px; }
+.browse .my-missions { margin-top: 12px; padding-top: 0; border-top: 0; }
+
+.crew { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.crew h2 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; font-size: 18px; font-weight: 500; }
+.crew h2 .muted { font-size: 14px; font-family: var(--mono); }
+.crew ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.crew li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; font-size: 14px; }
+.crew-role { padding: 1px 8px; font-size: 11px; color: var(--black); background: var(--white); border-radius: 999px; }
+.crew-joined { font-size: 12px; }
+.crew li .link-button { margin-left: auto; font-size: 13px; }
+.join-box { margin-top: 16px; }
+.join-box p { margin: 0; font-size: 14px; line-height: 1.5; }
+.join-box a { color: var(--white); }
+.join-with-code { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
+
+.mission-log-panel { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.mission-log-panel h2 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; font-size: 18px; font-weight: 500; }
+.mission-log-panel h2 .muted { font-size: 14px; font-family: var(--mono); }
+.log-entries { list-style: none; margin: 0 0 16px; padding: 0; max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.log-entries li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.log-entry-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; font-size: 13px; }
+.log-entry-head time { font-size: 12px; }
+.log-entry-body { margin: 0; font-size: 14px; line-height: 1.55; color: var(--gray-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-compose { display: flex; flex-direction: column; gap: 8px; }
+.log-compose textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 12px;
+  font: 14px/1.5 var(--sans);
+  color: var(--white);
+  background: var(--black);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  resize: vertical;
+}
+.log-compose textarea:focus { outline: none; border-color: var(--white); }
+.log-compose-foot { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.mono-count { font-family: var(--mono); }
+.log-compose .button { align-self: flex-start; }
+.log-closed { margin: 0; font-size: 14px; line-height: 1.5; }
+
+.visibility-field { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
+.visibility-field legend { margin-bottom: 8px; padding: 0; font-size: 13px; color: var(--gray-1); }
+.radio-option { flex-direction: row !important; align-items: flex-start; gap: 10px !important; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.radio-option:has(input:checked) { border-color: var(--white); }
+.radio-option input { width: auto !important; margin: 3px 0 0; accent-color: var(--white); }
+.radio-option > span { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.45; }
+
 .status-action { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .status-action p { margin: 0; font-size: 13px; line-height: 1.5; }
 .my-missions .muted { font-size: 13px; }

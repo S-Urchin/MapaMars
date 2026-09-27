@@ -4,7 +4,7 @@ import { MarsGlobe, type GlobeLayers, type GlobeMarker } from '../../components/
 import { formatLat, formatLon } from '../../data/mars'
 import { formatCode, sanitizeCode } from '../../lib/missionCode'
 import type { User } from '../../services/auth'
-import { createMissionLog, isMissionCodeAvailable, suggestMissionCode, updateMissionLog, type MissionLog } from '../../services/missionLogs'
+import { createMissionLog, isMissionCodeAvailable, suggestMissionCode, updateMissionLog, type MissionLog, type MissionVisibility } from '../../services/missionLogs'
 import { CUSTOM_TARGET, presets } from './shared'
 
 const Globe = memo(MarsGlobe)
@@ -23,8 +23,8 @@ type Props = {
 type CodeStatus = 'incomplete' | 'checking' | 'available' | 'taken' | 'error'
 
 function initialForm(m?: MissionLog) {
-  if (!m) return { name: '', preset: presets[0].value, target: '', lat: '', lon: '', date: '', objective: '' }
-  return { name: m.name, preset: CUSTOM_TARGET, target: m.target, lat: String(m.lat), lon: String(m.lon), date: m.date, objective: m.objective }
+  if (!m) return { name: '', preset: presets[0].value, target: '', lat: '', lon: '', date: '', objective: '', visibility: 'public' as MissionVisibility }
+  return { name: m.name, preset: CUSTOM_TARGET, target: m.target, lat: String(m.lat), lon: String(m.lon), date: m.date, objective: m.objective, visibility: m.visibility }
 }
 
 export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: Props) {
@@ -114,6 +114,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
       lon: target.lon,
       date: form.date,
       objective: form.objective,
+      visibility: form.visibility,
     }
     try {
       onSaved(mission ? await updateMissionLog(mission.id, fields) : await createMissionLog(fields))
@@ -136,7 +137,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
       <section className="mission-form-wrap">
         <h1>{editing ? 'Edit mission' : 'New mission'}</h1>
         <p className="muted">
-          {editing ? 'Change the details and save. Anyone with the code sees the update.' : 'Choose a code people will use to open your mission, then plan it.'}
+          {editing ? 'Change the details and save. Anyone with the code sees the update.' : 'Choose a code: it’s the invite people use to join your crew. Then plan the mission.'}
         </p>
 
         {authLoading ? null : !user ? (
@@ -205,6 +206,18 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
               <span>Objective <em className="muted">optional</em></span>
               <textarea value={form.objective} onChange={update('objective')} maxLength={500} rows={3} placeholder="What will this mission do?" />
             </label>
+            <fieldset className="visibility-field">
+              <legend>Who can find it</legend>
+              {([
+                ['public', 'Public', 'Anyone can see it and its crew when browsing. Joining still needs the code.'],
+                ['unlisted', 'Unlisted', 'Only people with the code can open it, until it’s completed.'],
+              ] as const).map(([value, label, hint]) => (
+                <label key={value} className="radio-option">
+                  <input type="radio" name="visibility" value={value} checked={form.visibility === value} onChange={() => setForm((f) => ({ ...f, visibility: value }))} />
+                  <span><span className="plain">{label}</span><span className="muted">{hint}</span></span>
+                </label>
+              ))}
+            </fieldset>
             {formError && <p className="form-error" role="alert">{formError}</p>}
             <div className="form-actions">
               <button className="button" type="submit" disabled={saving || !form.name.trim() || codeStatus !== 'available'}>
