@@ -5,7 +5,8 @@ export type AuthState = {
   user: User | null
   /** True until the first check of the session has finished. */
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  /** Accepts an email address or a username. */
+  signIn: (emailOrUsername: string, password: string) => Promise<void>
   /** Resolves with needsConfirmation = true when the account must confirm its email first. */
   signUp: (email: string, username: string, password: string) => Promise<{ needsConfirmation: boolean }>
   signOut: () => Promise<void>

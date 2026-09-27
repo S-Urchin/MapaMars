@@ -82,7 +82,23 @@ export async function signUp(email: string, username: string, password: string):
   return { needsConfirmation: !data.session }
 }
 
-export async function signIn(email: string, password: string) {
+/** Signs in with an email address or a username. */
+export async function signIn(emailOrUsername: string, password: string) {
+  const identifier = emailOrUsername.trim()
+  let email = identifier
+
+  if (!identifier.includes('@')) {
+    if (!USERNAME_PATTERN.test(identifier)) throw new Error('Wrong username or password')
+    // The database hands back the account's email only if the password is right
+    const { data, error } = await supabase.rpc('email_for_login', { p_username: identifier, p_password: password })
+    if (error) {
+      if (error.code === 'PGRST202') throw new Error('Signing in with a username needs a database update. Use your email for now.')
+      fail(error)
+    }
+    if (!data) throw new Error('Wrong username or password')
+    email = data as string
+  }
+
   const { error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) fail(error)
 }

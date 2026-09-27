@@ -76,10 +76,25 @@ export function AccountPage() {
         {mode === 'signin' ? 'Sign in to log missions and manage the ones you created.' : 'Your username is shown on every mission you log. Your email stays private.'}
       </p>
       <form className="mission-form" onSubmit={submit}>
-        <label>
-          <span>Email</span>
-          <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); clearError() }} autoComplete="email" required />
-        </label>
+        {mode === 'signin' ? (
+          <label>
+            <span>Email or username</span>
+            <input
+              type="text"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); clearError() }}
+              autoComplete="username"
+              autoCapitalize="off"
+              spellCheck={false}
+              required
+            />
+          </label>
+        ) : (
+          <label>
+            <span>Email</span>
+            <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); clearError() }} autoComplete="email" required />
+          </label>
+        )}
         {mode === 'signup' && (
           <label>
             <span>Username</span>

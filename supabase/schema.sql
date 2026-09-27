@@ -423,6 +423,57 @@ begin
 end;
 $$;
 
+-- ---------- Sign in with a username ----------
+-- Supabase signs in by email, and emails are private. This returns an account's email only when
+-- the password is correct, so the app can then sign in with it. Nothing is revealed without the password.
+
+create extension if not exists pgcrypto with schema extensions;
+
+-- Failed username sign-ins, for rate limiting (this path skips Supabase's own sign-in limits)
+create table if not exists public.login_attempts (
+  id bigint generated always as identity primary key,
+  username text not null,
+  attempted_at timestamptz not null default now()
+);
+
+create index if not exists login_attempts_username_idx on public.login_attempts (username, attempted_at desc);
+
+alter table public.login_attempts enable row level security;
+revoke all on public.login_attempts from anon, authenticated;
+
+create or replace function public.email_for_login(p_username text, p_password text)
+returns text
+language plpgsql
+volatile
+security definer set search_path = ''
+as $$
+declare
+  v_name text := lower(trim(coalesce(p_username, '')));
+  v_email text;
+  v_hash text;
+begin
+  if (
+    select count(*) from public.login_attempts
+    where username = v_name and attempted_at > now() - interval '15 minutes'
+  ) >= 10 then
+    raise exception 'Too many sign-in attempts for this username. Wait 15 minutes, or sign in with your email.' using errcode = 'P0001';
+  end if;
+
+  select u.email, u.encrypted_password into v_email, v_hash
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  where lower(p.username) = v_name;
+
+  if v_hash is not null and v_hash = extensions.crypt(coalesce(p_password, ''), v_hash) then
+    return v_email;
+  end if;
+
+  insert into public.login_attempts (username) values (v_name);
+  delete from public.login_attempts where attempted_at < now() - interval '1 day';
+  return null;
+end;
+$$;
+
 -- ---------- Codes ----------
 
 -- Is a code well-formed and unused? p_exclude skips the mission being edited.
@@ -447,3 +498,4 @@ grant execute on function public.join_mission(text) to authenticated;
 grant execute on function public.get_mission_entries(uuid, text) to anon, authenticated;
 grant execute on function public.add_mission_entry(uuid, text) to authenticated;
 grant execute on function public.mission_code_available(text, uuid) to anon, authenticated;
+grant execute on function public.email_for_login(text, text) to anon, authenticated;
