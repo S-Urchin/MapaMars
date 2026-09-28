@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { formatLat, formatLon } from '../data/mars'
 import { getMarsTextures } from './marsTexture'
+import { addSurfaceDetail } from './surfaceDetail'
 
 // Drop an equirectangular Mars map here to replace the procedural surface.
 const TEXTURE_URL = '/resources/mars.jpg'
@@ -30,6 +31,8 @@ type Props = {
   onPick?: (lat: number, lon: number) => void
   /** Fly the camera to a point; pass a new object each time to fly again. */
   focus?: { lat: number; lon: number } | null
+  /** Plunge the camera toward the selected site, just before switching to its close-up. */
+  dive?: boolean
 }
 
 function latLonToVector(lat: number, lon: number, radius = 1) {
@@ -58,9 +61,54 @@ function buildGraticule() {
   return new THREE.BufferGeometry().setFromPoints(points)
 }
 
+// Background stars on a far sphere: mostly faint, a few bright, with a denser band like the Milky Way.
+function buildStarfield(pixelRatio: number) {
+  const COUNT = 16000
+  const BAND = 0.45
+  const RADIUS = 60
+  const positions = new Float32Array(COUNT * 3)
+  const colors = new Float32Array(COUNT * 3)
+  const sizes = new Float32Array(COUNT)
+  const tints = [new THREE.Color('#9bb8ff'), new THREE.Color('#dfe7ff'), new THREE.Color('#ffffff'), new THREE.Color('#fff1d6'), new THREE.Color('#ffc98f')]
+  const bandTilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.9, 0.3, 0.4))
+  const v = new THREE.Vector3()
+  for (let i = 0; i < COUNT; i++) {
+    if (i < COUNT * BAND) {
+      // Spread around a great circle, squashed toward it
+      const a = Math.random() * Math.PI * 2
+      const spread = (Math.random() - 0.5) * (Math.random() * 0.5)
+      v.set(Math.cos(a), spread, Math.sin(a)).normalize().applyQuaternion(bandTilt)
+    } else {
+      v.randomDirection()
+    }
+    v.multiplyScalar(RADIUS).toArray(positions, i * 3)
+    const bright = Math.pow(Math.random(), 5)
+    tints[Math.floor(Math.random() * tints.length)].toArray(colors, i * 3)
+    for (let c = 0; c < 3; c++) colors[i * 3 + c] *= 0.55 + bright * 0.45
+    sizes[i] = (1.3 + bright * 3.2) * pixelRatio
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+  const stars = new THREE.Points(
+    geometry,
+    new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
+      vertexShader: 'attribute float size; varying vec3 vColor; void main(){ vColor = color; gl_PointSize = size; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'varying vec3 vColor; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vColor * a, a); }',
+    }),
+  )
+  stars.renderOrder = -1
+  return stars
+}
+
 const NO_SITES: GlobeMarker[] = []
 
-export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelect, interactive = true, onPick, focus = null }: Props) {
+export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelect, interactive = true, onPick, focus = null, dive = false }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onPickRef = useRef(onPick)
   const sitesRef = useRef(sites)
@@ -73,6 +121,7 @@ export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelec
   const stateRef = useRef({
     layers,
     focus: null as THREE.Vector3 | null,
+    diving: false,
     graticule: null as THREE.Object3D | null,
     orbit: null as THREE.Object3D | null,
     siteVectors: new Map<string, THREE.Vector3>(),
@@ -97,8 +146,11 @@ export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelec
     colorMap.anisotropy = renderer.capabilities.getMaxAnisotropy()
     const bumpMap = new THREE.CanvasTexture(procedural.bump)
     const material = new THREE.MeshStandardMaterial({ map: colorMap, bumpMap, bumpScale: 2.2, roughness: 0.95, metalness: 0 })
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), material)
+    addSurfaceDetail(material, { scale: 24, color: 0.55, relief: 0.012 })
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 192, 128), material)
     scene.add(globe)
+
+    scene.add(buildStarfield(renderer.getPixelRatio()))
 
     new THREE.TextureLoader().load(TEXTURE_URL, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace
@@ -216,16 +268,18 @@ export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelec
       timer.update()
       const dt = timer.getDelta()
       const elapsed = timer.getElapsed()
-      const { focus, layers: l, siteVectors } = stateRef.current
+      const { focus, diving, layers: l, siteVectors } = stateRef.current
 
+      // A dive drops the camera almost to the surface, so let it past the usual zoom limit
+      controls.minDistance = diving ? 1.1 : 1.6
       if (focus) {
         // Swing around the planet on a great circle instead of cutting through it
-        const k = 1 - Math.pow(0.03, dt)
+        const k = 1 - Math.pow(diving ? 0.01 : 0.03, dt)
         const dir = camera.position.clone().normalize()
         const turn = new THREE.Quaternion().slerp(new THREE.Quaternion().setFromUnitVectors(dir, focus.clone().normalize()), k)
-        const length = THREE.MathUtils.lerp(camera.position.length(), CAMERA_DISTANCE * 0.9, k)
+        const length = THREE.MathUtils.lerp(camera.position.length(), diving ? 1.15 : CAMERA_DISTANCE * 0.9, k)
         camera.position.copy(dir.applyQuaternion(turn).setLength(length))
-        if (camera.position.angleTo(focus) < 0.004) stateRef.current.focus = null
+        if (!diving && camera.position.angleTo(focus) < 0.004) stateRef.current.focus = null
       }
       controls.autoRotate = l.rotate && !focus
       controls.update()
@@ -290,6 +344,13 @@ export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelec
   useEffect(() => {
     if (focus) stateRef.current.focus = latLonToVector(focus.lat, focus.lon)
   }, [focus])
+
+  useEffect(() => {
+    const s = stateRef.current
+    s.diving = dive
+    const site = sitesRef.current.find((m) => m.id === selectedId)
+    if (dive && site) s.focus = latLonToVector(site.lat, site.lon)
+  }, [dive, selectedId])
 
   return (
     <div className={interactive ? 'globe-host' : 'globe-host is-preview'} ref={hostRef}>

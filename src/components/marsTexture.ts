@@ -108,7 +108,7 @@ export function createMarsTextures(width = 1024) {
   // Scatter craters, stretched horizontally to stay round on the sphere
   let seed = 7
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-  for (let n = 0; n < 420; n++) {
+  for (let n = 0; n < 1200; n++) {
     const lat = Math.asin(rand() * 1.8 - 0.9) / rad
     const lon = rand() * 360 - 180
     const size = Math.pow(rand(), 4) * width * 0.012 + 1.2
