@@ -162,13 +162,15 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     else if (e.key === '-') zoomAt(1.25)
   }
 
-  // Grid lines at a spacing that suits the zoom level
+  // Grid lines at a spacing that suits the zoom level: the finest step that still gives at most
+  // about 12 lines across. Zoomed out past the whole planet, nothing fits, so use the coarsest step.
   const grid = useMemo(() => {
-    const step = GRID_STEPS.find((s) => view.w / s <= 12) ?? GRID_STEPS[GRID_STEPS.length - 1]
+    const step = [...GRID_STEPS].reverse().find((s) => view.w / s <= 12) ?? GRID_STEPS[0]
     const xs: number[] = []
     const ys: number[] = []
-    for (let x = Math.ceil(Math.max(0, left) / step) * step; x <= Math.min(360, left + view.w); x += step) xs.push(x)
-    for (let y = Math.ceil(Math.max(0, top) / step) * step; y <= Math.min(180, top + h); y += step) ys.push(y)
+    // The cap is a safety net: a grid should never need more than a few dozen lines
+    for (let x = Math.ceil(Math.max(0, left) / step) * step; x <= Math.min(360, left + view.w) && xs.length < 60; x += step) xs.push(x)
+    for (let y = Math.ceil(Math.max(0, top) / step) * step; y <= Math.min(180, top + h) && ys.length < 60; y += step) ys.push(y)
     return { xs, ys }
   }, [left, top, view.w, h])
 
