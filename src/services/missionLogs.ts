@@ -16,6 +16,8 @@ export type MissionLog = {
   startName: string
   startLat: number
   startLon: number
+  /** Optional stops between start and end, in walking order */
+  phases: Phase[]
   /** Marswalk end point (stored in the older target / lat / lon columns) */
   target: string
   lat: number
@@ -30,11 +32,16 @@ export type MissionLog = {
   updatedAt?: string
 }
 
+/** An optional stop between the start and end of a Marswalk. */
+export type Phase = { name: string; lat: number; lon: number }
+
+export const MAX_PHASES = 10
+
 export type CrewMember = { userId: string; username: string; joinedAt: string }
 
 export type MissionFields = Pick<
   MissionLog,
-  'name' | 'startName' | 'startLat' | 'startLon' | 'target' | 'lat' | 'lon' | 'date' | 'objective' | 'visibility'
+  'name' | 'startName' | 'startLat' | 'startLon' | 'phases' | 'target' | 'lat' | 'lon' | 'date' | 'objective' | 'visibility'
 > & { code: string }
 
 /** Three capital letters, a dash, three digits. */
@@ -50,6 +57,7 @@ type Row = {
   start_name: string
   start_lat: number
   start_lon: number
+  phases: Phase[] | null
   target: string
   lat: number
   lon: number
@@ -69,7 +77,7 @@ type Row = {
 // `profiles!owner_id` picks the author: missions also reach profiles through the crew table,
 // so the relationship has to be named.
 const COLUMNS =
-  'id, owner_id, code, name, start_name, start_lat, start_lon, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
+  'id, owner_id, code, name, start_name, start_lat, start_lon, phases, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
 
 function fromRow(r: Row): MissionLog {
   return {
@@ -81,6 +89,7 @@ function fromRow(r: Row): MissionLog {
     startName: r.start_name,
     startLat: r.start_lat,
     startLon: r.start_lon,
+    phases: r.phases ?? [],
     target: r.target,
     lat: r.lat,
     lon: r.lon,
@@ -107,6 +116,13 @@ function toRow(f: MissionFields) {
   if (name.length > 80) throw new Error('Mission name must be 80 characters or fewer')
   if (!startName || startName.length > 80) throw new Error('Start point name must be 1–80 characters')
   if (!target || target.length > 80) throw new Error('End point name must be 1–80 characters')
+  if (f.phases.length > MAX_PHASES) throw new Error(`A Marswalk can have up to ${MAX_PHASES} phases`)
+  const phases = f.phases.map((p, i) => {
+    const phaseName = p.name.trim() || `Phase ${i + 1}`
+    if (phaseName.length > 80) throw new Error(`Phase ${i + 1} name must be 80 characters or fewer`)
+    if (!(Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)) throw new Error(`Phase ${i + 1} needs a valid latitude and longitude`)
+    return { name: phaseName, lat: round4(p.lat), lon: round4(p.lon) }
+  })
   if (f.objective.length > 500) throw new Error('Objective must be 500 characters or fewer')
   return {
     code,
@@ -115,6 +131,7 @@ function toRow(f: MissionFields) {
     start_name: startName,
     start_lat: round4(f.startLat),
     start_lon: round4(f.startLon),
+    phases,
     target,
     lat: round4(f.lat),
     lon: round4(f.lon),

@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { CodeInput } from '../../components/CodeInput'
 import { MarsMap2D, type LatLon } from '../../components/MarsMap2D'
-import { formatDistance, formatLat, formatLon, marsDistanceKm } from '../../data/mars'
+import { formatDistance, formatLat, formatLon } from '../../data/mars'
 import { formatCode, sanitizeCode } from '../../lib/missionCode'
+import { routeLegs, routeMarkers, type RouteStop } from '../../lib/route'
 import type { User } from '../../services/auth'
-import { createMissionLog, isMissionCodeAvailable, suggestMissionCode, updateMissionLog, type MissionLog, type MissionVisibility } from '../../services/missionLogs'
+import {
+  createMissionLog,
+  isMissionCodeAvailable,
+  MAX_PHASES,
+  suggestMissionCode,
+  updateMissionLog,
+  type MissionLog,
+  type MissionVisibility,
+} from '../../services/missionLogs'
 import { presets } from './shared'
 
 type Props = {
@@ -17,17 +26,19 @@ type Props = {
 }
 
 type CodeStatus = 'incomplete' | 'checking' | 'available' | 'taken' | 'error'
-type Which = 'start' | 'end'
+/** Which point a map click places: the start, a phase (by index), or the end. */
+type Slot = 'start' | 'end' | number
+type PointDraft = { name: string; lat: string; lon: string }
+
+const emptyPoint = (): PointDraft => ({ name: '', lat: '', lon: '' })
+const draftOf = (name: string, lat: number, lon: number): PointDraft => ({ name, lat: String(lat), lon: String(lon) })
 
 function initialForm(m?: MissionLog) {
   return {
     name: m?.name ?? '',
-    startName: m?.startName ?? '',
-    startLat: m ? String(m.startLat) : '',
-    startLon: m ? String(m.startLon) : '',
-    endName: m?.target ?? '',
-    endLat: m ? String(m.lat) : '',
-    endLon: m ? String(m.lon) : '',
+    start: m ? draftOf(m.startName, m.startLat, m.startLon) : emptyPoint(),
+    phases: m ? m.phases.map((p) => draftOf(p.name, p.lat, p.lon)) : ([] as PointDraft[]),
+    end: m ? draftOf(m.target, m.lat, m.lon) : emptyPoint(),
     date: m?.date ?? '',
     objective: m?.objective ?? '',
     visibility: (m?.visibility ?? 'public') as MissionVisibility,
@@ -36,18 +47,26 @@ function initialForm(m?: MissionLog) {
 
 type Form = ReturnType<typeof initialForm>
 
-function parsePoint(lat: string, lon: string): LatLon | null {
-  if (lat.trim() === '' || lon.trim() === '') return null
-  const p = { lat: Number(lat), lon: Number(lon) }
+function parsePoint(d: PointDraft): LatLon | null {
+  if (d.lat.trim() === '' || d.lon.trim() === '') return null
+  const p = { lat: Number(d.lat), lon: Number(d.lon) }
   return Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180 ? p : null
 }
 
-const pointName = (name: string, p: LatLon) => name.trim() || `${formatLat(p.lat, 3)} ${formatLon(p.lon, 3)}`
+const coordName = (p: LatLon) => `${formatLat(p.lat, 3)} ${formatLon(p.lon, 3)}`
+
+/** The point with its display name, or null when its coordinates aren't set. */
+function stopOf(d: PointDraft, fallback: string): RouteStop | null {
+  const p = parsePoint(d)
+  return p ? { ...p, name: d.name.trim() || fallback } : null
+}
+
+const slotLabel = (slot: Slot) => (slot === 'start' ? 'A · start' : slot === 'end' ? 'B · end' : `Phase ${slot + 1}`)
 
 export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: Props) {
   const editing = !!mission
   const [form, setForm] = useState(() => initialForm(mission))
-  const [placing, setPlacing] = useState<Which>(mission ? 'end' : 'start')
+  const [placing, setPlacing] = useState<Slot>(mission ? 'end' : 'start')
   const [raw, setRaw] = useState(() => sanitizeCode(mission?.code ?? ''))
   const [checked, setChecked] = useState<{ raw: string; status: CodeStatus } | null>(null)
   const [suggesting, setSuggesting] = useState(false)
@@ -72,26 +91,56 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
 
   const codeStatus: CodeStatus = raw.length < 6 ? 'incomplete' : keepsOwnCode ? 'available' : checked?.raw === raw ? checked.status : 'checking'
 
-  const start = useMemo(() => parsePoint(form.startLat, form.startLon), [form.startLat, form.startLon])
-  const end = useMemo(() => parsePoint(form.endLat, form.endLon), [form.endLat, form.endLon])
-  const distance = start && end ? marsDistanceKm(start, end) : null
+  const start = useMemo(() => stopOf(form.start, 'Start'), [form.start])
+  const end = useMemo(() => stopOf(form.end, 'End'), [form.end])
+  const phases = useMemo(() => form.phases.map((p, i) => stopOf(p, `Phase ${i + 1}`)), [form.phases])
+  const markers = useMemo(() => routeMarkers(start, phases, end), [start, phases, end])
+  const phasesComplete = phases.every(Boolean)
+  const route = start && end && phasesComplete ? routeLegs([start, ...(phases as RouteStop[]), end]) : null
 
   const set = (patch: Partial<Form>) => {
     setForm((f) => ({ ...f, ...patch }))
     setFormError(null)
   }
-  const update = (field: keyof Form) => (e: { target: { value: string } }) => set({ [field]: e.target.value })
 
-  // Clicking the map places whichever point is selected; after the start, move on to the end
+  const draftAt = (slot: Slot) => (slot === 'start' ? form.start : slot === 'end' ? form.end : form.phases[slot])
+  const setDraft = (slot: Slot, patch: Partial<PointDraft>) => {
+    setForm((f) => {
+      if (slot === 'start') return { ...f, start: { ...f.start, ...patch } }
+      if (slot === 'end') return { ...f, end: { ...f.end, ...patch } }
+      return { ...f, phases: f.phases.map((p, i) => (i === slot ? { ...p, ...patch } : p)) }
+    })
+    setFormError(null)
+  }
+
+  // Clicking the map places the selected point, then moves on to the next point that's still empty
   const pick = (p: LatLon) => {
-    const lat = p.lat.toFixed(4)
-    const lon = p.lon.toFixed(4)
-    if (placing === 'start') {
-      set({ startLat: lat, startLon: lon })
-      if (!end) setPlacing('end')
-    } else {
-      set({ endLat: lat, endLon: lon })
-    }
+    setDraft(placing, { lat: p.lat.toFixed(4), lon: p.lon.toFixed(4) })
+    const order: Slot[] = ['start', ...form.phases.map((_, i) => i), 'end']
+    const next = order.slice(order.indexOf(placing) + 1).find((slot) => !parsePoint(draftAt(slot)))
+    if (next !== undefined) setPlacing(next)
+  }
+
+  const addPhase = () => {
+    if (form.phases.length >= MAX_PHASES) return
+    set({ phases: [...form.phases, emptyPoint()] })
+    setPlacing(form.phases.length)
+  }
+
+  const removePhase = (i: number) => {
+    set({ phases: form.phases.filter((_, j) => j !== i) })
+    if (placing === i) setPlacing('end')
+    else if (typeof placing === 'number' && placing > i) setPlacing(placing - 1)
+  }
+
+  const movePhase = (i: number, dir: -1 | 1) => {
+    const j = i + dir
+    if (j < 0 || j >= form.phases.length) return
+    const next = [...form.phases]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    set({ phases: next })
+    if (placing === i) setPlacing(j)
+    else if (placing === j) setPlacing(i)
   }
 
   const jumpTo = (value: string) => {
@@ -117,16 +166,19 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
     e.preventDefault()
     if (codeStatus !== 'available') { setFormError('Choose an available mission code first.'); return }
     if (!start) { setFormError('Set a start point: click the map or type its latitude and longitude.'); return }
+    const missingPhase = phases.findIndex((p) => !p)
+    if (missingPhase >= 0) { setFormError(`Set phase ${missingPhase + 1}’s location, or remove it.`); return }
     if (!end) { setFormError('Set an end point: click the map or type its latitude and longitude.'); return }
     setSaving(true)
     setFormError(null)
     const fields = {
       code,
       name: form.name,
-      startName: pointName(form.startName, start),
+      startName: form.start.name.trim() || coordName(start),
       startLat: start.lat,
       startLon: start.lon,
-      target: pointName(form.endName, end),
+      phases: (phases as RouteStop[]).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
+      target: form.end.name.trim() || coordName(end),
       lat: end.lat,
       lon: end.lon,
       date: form.date,
@@ -149,30 +201,45 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
     error: 'Could not check this code right now.',
   }
 
-  const pointFields = (which: Which) => {
-    const isStart = which === 'start'
-    const [nameKey, latKey, lonKey] = isStart ? (['startName', 'startLat', 'startLon'] as const) : (['endName', 'endLat', 'endLon'] as const)
+  const pointFields = (slot: Slot) => {
+    const draft = draftAt(slot)
+    const isPhase = typeof slot === 'number'
+    const badge = slot === 'start' ? 'A' : slot === 'end' ? 'B' : String(slot + 1)
+    const title = slot === 'start' ? 'Start point' : slot === 'end' ? 'End point' : `Phase ${slot + 1}`
+    const placeholder = slot === 'start' ? 'e.g. Habitat' : slot === 'end' ? 'e.g. Delta outcrop' : 'e.g. Crater rim sample stop'
     return (
-      <fieldset className={`point-field${placing === which ? ' is-placing' : ''}`}>
+      <fieldset key={String(slot)} className={`point-field${placing === slot ? ' is-placing' : ''}`}>
         <legend>
-          <span className={`point-letter is-${which}`}>{isStart ? 'A' : 'B'}</span>
-          {isStart ? 'Start point' : 'End point'}
+          <span className={`point-letter is-${isPhase ? 'phase' : slot}`}>{badge}</span>
+          {title}
         </legend>
+        {isPhase && (
+          <div className="phase-controls span-2">
+            <button type="button" className="link-button" onClick={() => setPlacing(slot)} disabled={placing === slot}>
+              {placing === slot ? 'Placing on map' : 'Place on map'}
+            </button>
+            <button type="button" className="icon-btn" onClick={() => movePhase(slot, -1)} disabled={slot === 0} aria-label={`Move phase ${slot + 1} earlier`}>↑</button>
+            <button type="button" className="icon-btn" onClick={() => movePhase(slot, 1)} disabled={slot === form.phases.length - 1} aria-label={`Move phase ${slot + 1} later`}>↓</button>
+            <button type="button" className="icon-btn" onClick={() => removePhase(slot)} aria-label={`Remove phase ${slot + 1}`}>✕</button>
+          </div>
+        )}
         <label className="span-2">
-          <span>Place name <em className="muted">optional</em></span>
-          <input value={form[nameKey]} onChange={update(nameKey)} maxLength={80} placeholder={isStart ? 'e.g. Habitat' : 'e.g. Delta outcrop'} />
+          <span>{isPhase ? 'Phase name' : 'Place name'} <em className="muted">optional</em></span>
+          <input value={draft.name} onChange={(e) => setDraft(slot, { name: e.target.value })} maxLength={80} placeholder={placeholder} />
         </label>
         <label>
           <span>Latitude</span>
-          <input value={form[latKey]} onChange={update(latKey)} inputMode="decimal" placeholder="-90 to 90" />
+          <input value={draft.lat} onChange={(e) => setDraft(slot, { lat: e.target.value })} inputMode="decimal" placeholder="-90 to 90" />
         </label>
         <label>
           <span>Longitude (east)</span>
-          <input value={form[lonKey]} onChange={update(lonKey)} inputMode="decimal" placeholder="-180 to 180" />
+          <input value={draft.lon} onChange={(e) => setDraft(slot, { lon: e.target.value })} inputMode="decimal" placeholder="-180 to 180" />
         </label>
       </fieldset>
     )
   }
+
+  const slots: Slot[] = ['start', ...form.phases.map((_, i) => i), 'end']
 
   return (
     <main className="missions-page">
@@ -188,7 +255,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
             <a className="button" href="#/account">Sign in or create an account</a>
           </div>
         ) : (
-          <form className="mission-form" id="mission-form" onSubmit={submit} noValidate>
+          <form className="mission-form" onSubmit={submit} noValidate>
             <div className="code-field">
               <span className="field-label">Mission code</span>
               <CodeInput
@@ -210,25 +277,47 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
 
             <label>
               <span>Mission name</span>
-              <input value={form.name} onChange={update('name')} maxLength={80} required placeholder="e.g. Delta Survey I" />
+              <input value={form.name} onChange={(e) => set({ name: e.target.value })} maxLength={80} required placeholder="e.g. Delta Survey I" />
             </label>
 
             {pointFields('start')}
+
+            <section className="phases" aria-label="Phases">
+              <div className="phases-head">
+                <span>Phases <em className="muted">optional</em></span>
+                <span className="muted">{form.phases.length}/{MAX_PHASES}</span>
+              </div>
+              {form.phases.length === 0 && <p className="muted phases-hint">Add stops between the start and end, in the order you’ll walk them.</p>}
+              {form.phases.map((_, i) => pointFields(i))}
+              <button type="button" className="button-outline add-phase" onClick={addPhase} disabled={form.phases.length >= MAX_PHASES}>
+                + Add phase
+              </button>
+            </section>
+
             {pointFields('end')}
 
-            <p className="route-summary" aria-live="polite">
-              {distance !== null
-                ? <>Straight-line distance: <strong className="plain">{formatDistance(distance)}</strong> <span className="muted">(derived; terrain not included yet)</span></>
-                : <span className="muted">Set both points to see the distance.</span>}
-            </p>
+            <div className="route-summary" aria-live="polite">
+              {route ? (
+                <>
+                  <p>Straight-line distance: <strong className="plain">{formatDistance(route.totalKm)}</strong> <span className="muted">(derived; terrain not included yet)</span></p>
+                  {route.legs.length > 1 && (
+                    <ol className="legs">
+                      {route.legs.map((leg, i) => <li key={i}><span>{leg.from} → {leg.to}</span><span className="mono-count">{formatDistance(leg.km)}</span></li>)}
+                    </ol>
+                  )}
+                </>
+              ) : (
+                <p className="muted">Set every point to see the distance.</p>
+              )}
+            </div>
 
             <label>
               <span>Planned date <em className="muted">optional</em></span>
-              <input type="date" value={form.date} onChange={update('date')} />
+              <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
             </label>
             <label>
               <span>Objective <em className="muted">optional</em></span>
-              <textarea value={form.objective} onChange={update('objective')} maxLength={500} rows={3} placeholder="What will this Marswalk do?" />
+              <textarea value={form.objective} onChange={(e) => set({ objective: e.target.value })} maxLength={500} rows={3} placeholder="What will this Marswalk do?" />
             </label>
             <fieldset className="visibility-field">
               <legend>Who can find it</legend>
@@ -244,7 +333,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
             </fieldset>
             {formError && <p className="form-error" role="alert">{formError}</p>}
             <div className="form-actions">
-              <button className="button" type="submit" disabled={saving || !form.name.trim() || codeStatus !== 'available' || !start || !end}>
+              <button className="button" type="submit" disabled={saving || !form.name.trim() || codeStatus !== 'available' || !route}>
                 {saving ? 'Saving…' : editing ? 'Save changes' : 'Create Marswalk'}
               </button>
               <button type="button" className="button-outline" onClick={onCancel}>Cancel</button>
@@ -257,9 +346,10 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
         {user && (
           <div className="map-toolbar">
             <div className="toggles" role="radiogroup" aria-label="Point to place on the map">
-              {(['start', 'end'] as const).map((w) => (
-                <button key={w} type="button" role="radio" aria-checked={placing === w} className={placing === w ? 'is-on' : ''} onClick={() => setPlacing(w)}>
-                  Place {w === 'start' ? 'A · start' : 'B · end'}
+              {slots.map((slot) => (
+                <button key={String(slot)} type="button" role="radio" aria-checked={placing === slot} className={placing === slot ? 'is-on' : ''} onClick={() => setPlacing(slot)}>
+                  {slot === 'start' ? 'A' : slot === 'end' ? 'B' : slot + 1}
+                  <span className="visually-hidden"> {slotLabel(slot)}</span>
                 </button>
               ))}
             </div>
@@ -276,16 +366,8 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
             </label>
           </div>
         )}
-        <MarsMap2D
-          start={start}
-          end={end}
-          startLabel={form.startName.trim() || 'Start'}
-          endLabel={form.endName.trim() || 'End'}
-          onPick={user ? pick : undefined}
-          focus={focus}
-          label="Marswalk planning map"
-        />
-        {user && <p className="muted map-hint">Click the map to place {placing === 'start' ? 'A (start)' : 'B (end)'}. Drag to pan, scroll to zoom.</p>}
+        <MarsMap2D points={markers} onPick={user ? pick : undefined} focus={focus} label="Marswalk planning map" />
+        {user && <p className="muted map-hint">Click the map to place <strong className="plain">{slotLabel(placing)}</strong>. Drag to pan, scroll to zoom.</p>}
       </section>
     </main>
   )

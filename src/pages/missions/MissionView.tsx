@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { CodeInput } from '../../components/CodeInput'
 import { MarsMap2D } from '../../components/MarsMap2D'
-import { formatDistance, formatLat, formatLon, marsDistanceKm } from '../../data/mars'
+import { formatDistance, formatLat, formatLon } from '../../data/mars'
+import { routeLegs, routeMarkers } from '../../lib/route'
 import { useNow } from '../../hooks/useNow'
 import { formatCode } from '../../lib/missionCode'
 import type { User } from '../../services/auth'
@@ -46,8 +47,12 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
   const isMember = !!user && !!crew?.some((c) => c.userId === user.id)
   const code = mission.code ?? knownCode
 
-  const start = { lat: mission.startLat, lon: mission.startLon }
-  const end = { lat: mission.lat, lon: mission.lon }
+  // Walking order: A (start) → phases → B (end)
+  const start = { name: mission.startName, lat: mission.startLat, lon: mission.startLon }
+  const end = { name: mission.target, lat: mission.lat, lon: mission.lon }
+  const stops = [start, ...mission.phases, end]
+  const markers = routeMarkers(start, mission.phases, end)
+  const route = routeLegs(stops)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -158,16 +163,29 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
         <p className="muted">Led by <strong className="plain">{mission.commander}</strong></p>
 
         <dl className="kv">
-          <dt>A · Start</dt>
-          <dd className="plain-dd">{mission.startName}<span className="muted coord-line">{formatLat(start.lat, 4)} {formatLon(start.lon, 4)}</span></dd>
-          <dt>B · End</dt>
-          <dd className="plain-dd">{mission.target}<span className="muted coord-line">{formatLat(end.lat, 4)} {formatLon(end.lon, 4)}</span></dd>
           <dt>Distance</dt>
-          <dd>{formatDistance(marsDistanceKm(start, end))} <span className="muted">straight line</span></dd>
+          <dd>{formatDistance(route.totalKm)} <span className="muted">straight line{mission.phases.length ? `, ${mission.phases.length} phase${mission.phases.length === 1 ? '' : 's'}` : ''}</span></dd>
           {mission.date && <><dt>Planned</dt><dd>{mission.date}</dd></>}
           <dt>Logged</dt><dd>{timeAgo(mission.createdAt, now)}</dd>
           {mission.completedAt && <><dt>Completed</dt><dd>{timeAgo(mission.completedAt, now)}</dd></>}
         </dl>
+
+        <ol className="route-stops" aria-label="Route">
+          {stops.map((stop, i) => {
+            const badge = i === 0 ? 'A' : i === stops.length - 1 ? 'B' : String(i)
+            const variant = i === 0 ? 'start' : i === stops.length - 1 ? 'end' : 'phase'
+            return (
+              <li key={i}>
+                <span className={`point-letter is-${variant}`}>{badge}</span>
+                <span className="route-stop-text">
+                  <span className="plain">{stop.name}</span>
+                  <span className="muted coord-line">{formatLat(stop.lat, 4)} {formatLon(stop.lon, 4)}</span>
+                </span>
+                {i > 0 && <span className="muted mono-count">+{formatDistance(route.legs[i - 1].km)}</span>}
+              </li>
+            )
+          })}
+        </ol>
 
         {mission.objective && <p className="site-note">{mission.objective}</p>}
 
@@ -236,7 +254,7 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
       </section>
 
       <section className="mission-map">
-        <MarsMap2D start={start} end={end} startLabel={mission.startName} endLabel={mission.target} label={`Route of ${mission.name}`} />
+        <MarsMap2D points={markers} label={`Route of ${mission.name}`} />
       </section>
     </main>
   )

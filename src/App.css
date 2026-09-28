@@ -255,7 +255,7 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .map2d-surface:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .map2d-surface svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .map2d-grid line { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.map2d-route { stroke: var(--white); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
+.map2d-route { fill: none; stroke: var(--white); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
 .map2d-marker { position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 6px; margin: -12px 0 0 -12px; pointer-events: none; }
 .map2d-pin {
   width: 24px;
@@ -550,3 +550,25 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
   .site-list li { flex: 1 1 140px; }
   .site-list button { border-color: var(--line); }
 }
+
+/* Phases (optional stops between start and end) */
+.phases { display: flex; flex-direction: column; gap: 10px; }
+.phases-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--gray-1); }
+.phases-head em { font-style: normal; }
+.phases-hint { margin: 0; font-size: 13px; }
+.add-phase { align-self: flex-start; padding: 7px 16px; font-size: 14px; }
+.phase-controls { display: flex; align-items: center; gap: 6px; }
+.phase-controls .link-button { margin-right: auto; font-size: 13px; }
+.icon-btn { width: 28px; height: 28px; padding: 0; font-size: 13px; background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.icon-btn:hover:not(:disabled) { border-color: var(--white); }
+.icon-btn:disabled { opacity: 0.3; cursor: default; }
+.point-letter.is-phase { color: var(--white); background: rgba(255, 255, 255, 0.18); }
+.map2d-marker.is-phase .map2d-pin { width: 20px; height: 20px; margin: 2px; font-size: 11px; color: var(--black); background: rgba(255, 255, 255, 0.85); }
+.route-summary p { margin: 0; }
+.legs { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-1); }
+.legs li { display: flex; justify-content: space-between; gap: 12px; }
+.route-stops { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.route-stops li { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; }
+.route-stops .point-letter { flex: none; margin-top: 1px; }
+.route-stop-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.route-stops .mono-count { font-size: 12px; }

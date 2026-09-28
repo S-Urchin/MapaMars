@@ -5,11 +5,17 @@ import { getMarsTextures } from './marsTexture'
 
 export type LatLon = { lat: number; lon: number }
 
+/** A marker on the map. Points are drawn in order and joined by the route line. */
+export type MapPoint = LatLon & {
+  key: string
+  /** Short text inside the marker, e.g. "A", "1", "B" */
+  badge: string
+  label: string
+  variant: 'start' | 'phase' | 'end'
+}
+
 type Props = {
-  start?: LatLon | null
-  end?: LatLon | null
-  startLabel?: string
-  endLabel?: string
+  points: MapPoint[]
   /** Called when the map is clicked (not dragged). Omit for a read-only map. */
   onPick?: (point: LatLon) => void
   /** Move the view here; pass a new object to move again. `span` is the width shown, in degrees. */
@@ -39,14 +45,15 @@ function useMapImage() {
   return src
 }
 
-function initialView(start?: LatLon | null, end?: LatLon | null) {
-  if (start && end) {
-    const span = Math.max(Math.abs(start.lon - end.lon), Math.abs(start.lat - end.lat) * 2) * 3
-    return { cx: toX((start.lon + end.lon) / 2), cy: toY((start.lat + end.lat) / 2), w: Math.min(MAX_SPAN, Math.max(span, 0.1)) }
-  }
-  const one = start ?? end
-  if (one) return { cx: toX(one.lon), cy: toY(one.lat), w: 20 }
-  return { cx: 180, cy: 90, w: 360 }
+// Fit all points in view, or show the whole planet when there are none
+function initialView(points: LatLon[]) {
+  if (points.length === 0) return { cx: 180, cy: 90, w: 360 }
+  if (points.length === 1) return { cx: toX(points[0].lon), cy: toY(points[0].lat), w: 20 }
+  const lons = points.map((p) => p.lon)
+  const lats = points.map((p) => p.lat)
+  const [minLon, maxLon, minLat, maxLat] = [Math.min(...lons), Math.max(...lons), Math.min(...lats), Math.max(...lats)]
+  const span = Math.max(maxLon - minLon, (maxLat - minLat) * 2) * 1.6
+  return { cx: toX((minLon + maxLon) / 2), cy: toY((minLat + maxLat) / 2), w: Math.min(MAX_SPAN, Math.max(span, 0.1)) }
 }
 
 const GRID_STEPS = [30, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005]
@@ -57,10 +64,10 @@ function niceKm(km: number) {
   return (n >= 5 ? 5 : n >= 2 ? 2 : 1) * pow
 }
 
-export function MarsMap2D({ start, end, startLabel = 'Start', endLabel = 'End', onPick, focus, label = 'Map of Mars' }: Props) {
+export function MarsMap2D({ points, onPick, focus, label = 'Map of Mars' }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 800, h: 450 })
-  const [view, setView] = useState(() => initialView(start, end))
+  const [view, setView] = useState(() => initialView(points))
   const [hover, setHover] = useState<LatLon | null>(null)
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: number } | null>(null)
   const image = useMapImage()
@@ -172,8 +179,6 @@ export function MarsMap2D({ start, end, startLabel = 'Start', endLabel = 'End', 
   }, [view.cy, unitsPerPx])
 
   const toPx = (p: LatLon) => ({ x: (toX(p.lon) - left) / unitsPerPx, y: (toY(p.lat) - top) / unitsPerPx })
-  const a = start ? toPx(start) : null
-  const b = end ? toPx(end) : null
 
   return (
     <div className="map2d">
@@ -196,26 +201,24 @@ export function MarsMap2D({ start, end, startLabel = 'Start', endLabel = 'End', 
             {grid.xs.map((x) => <line key={`x${x}`} x1={x} x2={x} y1={0} y2={180} />)}
             {grid.ys.map((y) => <line key={`y${y}`} x1={0} x2={360} y1={y} y2={y} />)}
           </g>
-          {start && end && (
-            <line className="map2d-route" x1={toX(start.lon)} y1={toY(start.lat)} x2={toX(end.lon)} y2={toY(end.lat)} />
+          {points.length > 1 && (
+            <polyline className="map2d-route" points={points.map((p) => `${toX(p.lon)},${toY(p.lat)}`).join(' ')} />
           )}
         </svg>
 
-        {a && (
-          <div className="map2d-marker is-start" style={{ transform: `translate(${a.x}px, ${a.y}px)` }}>
-            <span className="map2d-pin">A</span><span className="map2d-label">{startLabel}</span>
-          </div>
-        )}
-        {b && (
-          <div className="map2d-marker is-end" style={{ transform: `translate(${b.x}px, ${b.y}px)` }}>
-            <span className="map2d-pin">B</span><span className="map2d-label">{endLabel}</span>
-          </div>
-        )}
+        {points.map((p) => {
+          const at = toPx(p)
+          return (
+            <div key={p.key} className={`map2d-marker is-${p.variant}`} style={{ transform: `translate(${at.x}px, ${at.y}px)` }}>
+              <span className="map2d-pin">{p.badge}</span><span className="map2d-label">{p.label}</span>
+            </div>
+          )
+        })}
 
         <div className="map2d-zoom">
           <button type="button" onClick={() => zoomAt(0.5)} aria-label="Zoom in">+</button>
           <button type="button" onClick={() => zoomAt(2)} aria-label="Zoom out">−</button>
-          <button type="button" onClick={() => setView(initialView(start, end))} aria-label="Reset view" title="Reset view">⤢</button>
+          <button type="button" onClick={() => setView(initialView(points))} aria-label="Reset view" title="Reset view">⤢</button>
         </div>
 
         <div className="map2d-scale" aria-hidden="true">
