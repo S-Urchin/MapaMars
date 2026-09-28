@@ -12,6 +12,11 @@ export type MissionLog = {
   code: string | null
   name: string
   commander: string // the author's username
+  /** Marswalk start point */
+  startName: string
+  startLat: number
+  startLon: number
+  /** Marswalk end point (stored in the older target / lat / lon columns) */
   target: string
   lat: number
   lon: number
@@ -27,7 +32,10 @@ export type MissionLog = {
 
 export type CrewMember = { userId: string; username: string; joinedAt: string }
 
-export type MissionFields = Pick<MissionLog, 'name' | 'target' | 'lat' | 'lon' | 'date' | 'objective' | 'visibility'> & { code: string }
+export type MissionFields = Pick<
+  MissionLog,
+  'name' | 'startName' | 'startLat' | 'startLon' | 'target' | 'lat' | 'lon' | 'date' | 'objective' | 'visibility'
+> & { code: string }
 
 /** Three capital letters, a dash, three digits. */
 export const MISSION_CODE_PATTERN = /^[A-Z]{3}-\d{3}$/
@@ -39,6 +47,9 @@ type Row = {
   owner_id: string
   code?: string | null
   name: string
+  start_name: string
+  start_lat: number
+  start_lon: number
   target: string
   lat: number
   lon: number
@@ -58,7 +69,7 @@ type Row = {
 // `profiles!owner_id` picks the author: missions also reach profiles through the crew table,
 // so the relationship has to be named.
 const COLUMNS =
-  'id, owner_id, code, name, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
+  'id, owner_id, code, name, start_name, start_lat, start_lon, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
 
 function fromRow(r: Row): MissionLog {
   return {
@@ -67,6 +78,9 @@ function fromRow(r: Row): MissionLog {
     code: r.code ?? null,
     name: r.name,
     commander: r.username ?? r.author?.username ?? 'unknown',
+    startName: r.start_name,
+    startLat: r.start_lat,
+    startLon: r.start_lon,
     target: r.target,
     lat: r.lat,
     lon: r.lon,
@@ -81,21 +95,29 @@ function fromRow(r: Row): MissionLog {
   }
 }
 
+const round4 = (n: number) => Math.round(n * 1e4) / 1e4
+
 function toRow(f: MissionFields) {
   const code = f.code.trim().toUpperCase()
   const name = f.name.trim()
   const target = f.target.trim()
+  const startName = f.startName.trim()
   if (!MISSION_CODE_PATTERN.test(code)) throw new Error('Mission code must look like ABC-123')
   if (!name) throw new Error('Mission name is required')
   if (name.length > 80) throw new Error('Mission name must be 80 characters or fewer')
-  if (!target || target.length > 80) throw new Error('Target must be 1–80 characters')
+  if (!startName || startName.length > 80) throw new Error('Start point name must be 1–80 characters')
+  if (!target || target.length > 80) throw new Error('End point name must be 1–80 characters')
   if (f.objective.length > 500) throw new Error('Objective must be 500 characters or fewer')
   return {
     code,
     name,
+    // 4 decimal places is about 6 m on Mars: fine enough for a Marswalk
+    start_name: startName,
+    start_lat: round4(f.startLat),
+    start_lon: round4(f.startLon),
     target,
-    lat: Math.round(f.lat * 100) / 100,
-    lon: Math.round(f.lon * 100) / 100,
+    lat: round4(f.lat),
+    lon: round4(f.lon),
     date: f.date || null,
     objective: f.objective.trim(),
     visibility: f.visibility,

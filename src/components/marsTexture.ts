@@ -137,3 +137,9 @@ export function createMarsTextures(width = 1024) {
 
   return { color, bump }
 }
+
+// Generating the surface takes a moment, so every map and globe shares one copy.
+let cache: ReturnType<typeof createMarsTextures> | null = null
+export function getMarsTextures() {
+  return (cache ??= createMarsTextures(1024))
+}

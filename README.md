@@ -1,6 +1,30 @@
 # Mapa Mars
 
-An interactive 3D Mars globe built with React, TypeScript and three.js. Explore NASA landing sites, see the local time on Mars, and log your own missions to a shared log backed by Supabase.
+A Marswalk planning app built with React, TypeScript and three.js. Plan a walk on a 2D map of Mars by picking a start and end point, share it with a crew using a mission code, and keep a permanent mission log. A 3D globe gives an overview of NASA landing sites. Accounts and missions are stored in Supabase.
+
+## ⚠ NASA data: placeholders to connect
+
+No NASA data API is connected yet. Every data source MAPA needs is listed in [`src/config/nasaData.ts`](src/config/nasaData.ts) with an empty URL. Until a URL is filled in, the app uses the placeholder shown below.
+
+To connect one, set its environment variable in `.env.local` (and in Vercel's Environment Variables), or fill in `url` in `nasaData.ts`. Then document the exact dataset, product ID and resolution for the data-provenance label.
+
+| Data | Likely source | Used for | Env variable | Placeholder today |
+|---|---|---|---|---|
+| Surface imagery | CTX / Viking MDIM mosaics (e.g. via NASA Mars Trek) | 2D map background and 3D globe | `VITE_NASA_IMAGERY_URL` | Generated texture, or `public/resources/mars.jpg` |
+| Elevation | MOLA, Mars Global Surveyor | Elevation layer, elevation profile, gain/loss | `VITE_NASA_ELEVATION_URL` | Not shown |
+| Terrain model (DTM) | HiRISE / CTX DTMs for the demo region | Walking-scale elevation and slope (MOLA is too coarse for a few-km walk) | `VITE_NASA_DTM_URL` | Not shown |
+| Slope | Derived by MAPA from elevation / DTM | Steep-terrain layer, hazards, max slope on a route | `VITE_NASA_SLOPE_URL` | Not shown; distance is straight-line only |
+| Geological units | USGS Geologic Map of Mars (SIM 3292) | Science layer, site-card geology | `VITE_NASA_GEOLOGY_URL` | Not shown |
+| Mineralogy | CRISM, Mars Reconnaissance Orbiter | Science layer, science opportunities | `VITE_NASA_MINERALOGY_URL` | Not shown |
+| Thermal | THEMIS, Mars Odyssey | Surface-condition layer | `VITE_NASA_THERMAL_URL` | Not shown |
+| Rover traverses | Perseverance, Curiosity, Opportunity, Spirit (PDS) | Historical mission layer | `VITE_NASA_TRAVERSES_URL` | Landing-site points in `src/data/mars.ts` |
+| Place names | IAU / USGS Gazetteer of Planetary Nomenclature | Searching Mars by name | `VITE_NASA_PLACENAMES_URL` | Short landmark list in `src/data/mars.ts` |
+
+Notes:
+
+- Only surface imagery is wired up so far: once `VITE_NASA_IMAGERY_URL` is set, the 2D map uses it. It currently expects a single equirectangular image URL; tiled imagery (WMTS / XYZ) needs map-tile support added first.
+- Verify each source can be loaded from a browser (CORS) before relying on it.
+- The site marks every value as **Observed** (straight from NASA), **Derived** (calculated by MAPA from NASA data) or **Estimated** (based on assumptions). Keep that labelling when adding layers.
 
 ## Requirements
 
@@ -76,8 +100,9 @@ git pull
 
 ```text
 src/
+  config/       NASA data sources (placeholders until connected)
   pages/        Home, Globe, Missions and Account pages
-  components/   3D globe and procedural Mars texture
+  components/   2D Marswalk map, 3D globe and procedural Mars texture
   auth/         Signed-in user state
   services/     Supabase calls for accounts and missions
   data/         Landing sites, landmarks and Mars time formulas

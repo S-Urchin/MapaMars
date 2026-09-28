@@ -1,7 +1,7 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CodeInput } from '../../components/CodeInput'
-import { MarsGlobe, type GlobeLayers, type GlobeMarker } from '../../components/MarsGlobe'
-import { formatLat, formatLon } from '../../data/mars'
+import { MarsMap2D } from '../../components/MarsMap2D'
+import { formatDistance, formatLat, formatLon, marsDistanceKm } from '../../data/mars'
 import { useNow } from '../../hooks/useNow'
 import { formatCode } from '../../lib/missionCode'
 import type { User } from '../../services/auth'
@@ -18,8 +18,6 @@ import {
 import { MissionLogPanel } from './MissionLogPanel'
 import { go, missionPath, timeAgo } from './shared'
 
-const Globe = memo(MarsGlobe)
-const LAYERS: GlobeLayers = { grid: true, sites: true, orbits: false, rotate: false }
 
 type Props = {
   mission: MissionLog
@@ -48,8 +46,8 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
   const isMember = !!user && !!crew?.some((c) => c.userId === user.id)
   const code = mission.code ?? knownCode
 
-  const markers = useMemo<GlobeMarker[]>(() => [{ id: mission.id, label: mission.name, lat: mission.lat, lon: mission.lon, variant: 'filled' }], [mission])
-  const focus = useMemo(() => ({ lat: mission.lat, lon: mission.lon }), [mission.lat, mission.lon])
+  const start = { lat: mission.startLat, lon: mission.startLon }
+  const end = { lat: mission.lat, lon: mission.lon }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -160,9 +158,12 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
         <p className="muted">Led by <strong className="plain">{mission.commander}</strong></p>
 
         <dl className="kv">
-          <dt>Target</dt><dd className="plain-dd">{mission.target}</dd>
-          <dt>Latitude</dt><dd>{formatLat(mission.lat)}</dd>
-          <dt>Longitude</dt><dd>{formatLon(mission.lon)}</dd>
+          <dt>A · Start</dt>
+          <dd className="plain-dd">{mission.startName}<span className="muted coord-line">{formatLat(start.lat, 4)} {formatLon(start.lon, 4)}</span></dd>
+          <dt>B · End</dt>
+          <dd className="plain-dd">{mission.target}<span className="muted coord-line">{formatLat(end.lat, 4)} {formatLon(end.lon, 4)}</span></dd>
+          <dt>Distance</dt>
+          <dd>{formatDistance(marsDistanceKm(start, end))} <span className="muted">straight line</span></dd>
           {mission.date && <><dt>Planned</dt><dd>{mission.date}</dd></>}
           <dt>Logged</dt><dd>{timeAgo(mission.createdAt, now)}</dd>
           {mission.completedAt && <><dt>Completed</dt><dd>{timeAgo(mission.completedAt, now)}</dd></>}
@@ -234,11 +235,8 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
         {error && <p className="form-error" role="alert">{error}</p>}
       </section>
 
-      <section className="mission-globe">
-        <div className="globe-frame">
-          <Globe sites={markers} selectedId={mission.id} layers={LAYERS} focus={focus} />
-          <p className="globe-hint">Drag to rotate · Scroll to zoom</p>
-        </div>
+      <section className="mission-map">
+        <MarsMap2D start={start} end={end} startLabel={mission.startName} endLabel={mission.target} label={`Route of ${mission.name}`} />
       </section>
     </main>
   )

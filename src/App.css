@@ -229,8 +229,74 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .account-page .switch-mode { margin: 24px 0 0; font-size: 14px; }
 
-.mission-globe { grid-area: globe; min-width: 0; }
-.mission-globe .globe-frame { height: min(640px, calc(100vh - 140px)); }
+/* 2D Marswalk map */
+.mission-map { grid-area: globe; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.map-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.map-toolbar .toggles { justify-content: flex-start; }
+.jump-to select { padding: 6px 12px; font: 13px var(--sans); color: var(--white); background: var(--black); border: 1px solid var(--line); border-radius: 999px; }
+.jump-to select option, .jump-to select optgroup { background: var(--black); }
+.map-hint { margin: 0; font-size: 12px; }
+
+.map2d { display: flex; flex-direction: column; gap: 6px; }
+.map2d-surface {
+  position: relative;
+  height: min(620px, calc(100vh - 190px));
+  min-height: 340px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #000;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.map2d-surface:active { cursor: grabbing; }
+.map2d-surface.is-pickable { cursor: crosshair; }
+.map2d-surface:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
+.map2d-surface svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.map2d-grid line { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map2d-route { stroke: var(--white); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
+.map2d-marker { position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 6px; margin: -12px 0 0 -12px; pointer-events: none; }
+.map2d-pin {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font: 600 12px var(--sans);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.55);
+}
+.map2d-marker.is-start .map2d-pin { color: var(--black); background: var(--white); }
+.map2d-marker.is-end .map2d-pin { color: var(--white); background: var(--black); border: 2px solid var(--white); }
+.map2d-label { padding: 2px 7px; font-size: 12px; color: var(--white); background: rgba(0, 0, 0, 0.72); border-radius: 4px; white-space: nowrap; }
+.map2d-zoom { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.map2d-zoom button {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--white);
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.map2d-zoom button:hover { border-color: var(--white); }
+.map2d-scale { position: absolute; left: 12px; bottom: 10px; display: flex; flex-direction: column; gap: 3px; font: 11px var(--mono); color: var(--white); text-shadow: 0 1px 2px #000; pointer-events: none; }
+.map2d-scale span { display: block; height: 6px; border: 2px solid var(--white); border-top: 0; }
+.map2d-readout { position: absolute; right: 12px; bottom: 10px; font: 12px var(--mono); color: var(--white); text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none; }
+.map2d-source { margin: 0; font-size: 12px; }
+
+/* Start / end point fields */
+.point-field { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.point-field.is-placing { border-color: var(--white); }
+.point-field legend { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; color: var(--gray-1); }
+.point-field .span-2 { grid-column: 1 / -1; }
+.point-letter { width: 20px; height: 20px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; border-radius: 50%; }
+.point-letter.is-start { color: var(--black); background: var(--white); }
+.point-letter.is-end { color: var(--white); border: 1.5px solid var(--white); }
+.route-summary { margin: 0; font-size: 14px; }
+.coord-line { display: block; font-family: var(--mono); font-size: 12px; }
 
 button.button { border: 0; font: inherit; font-weight: 500; cursor: pointer; }
 button.button:disabled,
@@ -462,7 +528,7 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
   .globe-frame { height: 70vh; }
   .missions-page { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'form' 'globe'; }
   .mission-view { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'detail' 'globe'; }
-  .mission-globe .globe-frame { height: min(60vh, 100vw); min-height: 340px; }
+  .map2d-surface { height: min(60vh, 100vw); }
 }
 
 @media (max-width: 720px) {

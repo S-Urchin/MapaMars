@@ -77,6 +77,22 @@ alter table public.mission_logs drop constraint if exists mission_logs_visibilit
 alter table public.mission_logs add constraint mission_logs_visibility_check check (visibility in ('public', 'unlisted'));
 create index if not exists mission_logs_browse_idx on public.mission_logs (created_at desc) where visibility = 'public' and status = 'open';
 
+-- Marswalk start point. The existing target / lat / lon columns are the end point.
+-- Missions created before this existed start and end at their old target.
+alter table public.mission_logs add column if not exists start_name text;
+alter table public.mission_logs add column if not exists start_lat double precision;
+alter table public.mission_logs add column if not exists start_lon double precision;
+update public.mission_logs
+  set start_name = coalesce(start_name, target), start_lat = coalesce(start_lat, lat), start_lon = coalesce(start_lon, lon)
+  where start_name is null or start_lat is null or start_lon is null;
+alter table public.mission_logs alter column start_name set not null;
+alter table public.mission_logs alter column start_lat set not null;
+alter table public.mission_logs alter column start_lon set not null;
+alter table public.mission_logs drop constraint if exists mission_logs_start_check;
+alter table public.mission_logs add constraint mission_logs_start_check check (
+  char_length(trim(start_name)) between 1 and 80 and start_lat between -90 and 90 and start_lon between -180 and 180
+);
+
 -- Stamp edits on the server so clients can't fake them
 create or replace function public.touch_updated_at()
 returns trigger
@@ -217,7 +233,7 @@ drop function if exists public.get_mission_crew(uuid, text);
 -- Browse public open missions ('open') or all completed missions ('complete'). Never includes codes.
 create function public.browse_missions(p_status text)
 returns table (
-  id uuid, owner_id uuid, name text, target text, lat double precision, lon double precision, date date,
+  id uuid, owner_id uuid, name text, target text, start_name text, start_lat double precision, start_lon double precision, lat double precision, lon double precision, date date,
   objective text, status text, visibility text, completed_at timestamptz, created_at timestamptz,
   updated_at timestamptz, username text, crew_count int
 )
@@ -225,7 +241,7 @@ language sql
 stable
 security definer set search_path = ''
 as $$
-  select m.id, m.owner_id, m.name, m.target, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
+  select m.id, m.owner_id, m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
     m.completed_at, m.created_at, m.updated_at, p.username,
     (select count(*)::int from public.mission_members mm where mm.mission_id = m.id)
   from public.mission_logs m
@@ -239,7 +255,7 @@ $$;
 -- The code is only included for insiders.
 create function public.get_mission(p_id uuid)
 returns table (
-  id uuid, owner_id uuid, code text, name text, target text, lat double precision, lon double precision, date date,
+  id uuid, owner_id uuid, code text, name text, target text, start_name text, start_lat double precision, start_lon double precision, lat double precision, lon double precision, date date,
   objective text, status text, visibility text, completed_at timestamptz, created_at timestamptz,
   updated_at timestamptz, username text, crew_count int
 )
@@ -249,7 +265,7 @@ security definer set search_path = ''
 as $$
   select m.id, m.owner_id,
     case when public.is_mission_insider(m.id) then m.code end,
-    m.name, m.target, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
+    m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
     m.completed_at, m.created_at, m.updated_at, p.username,
     (select count(*)::int from public.mission_members mm where mm.mission_id = m.id)
   from public.mission_logs m
@@ -261,7 +277,7 @@ $$;
 -- One mission by its exact code (you already know the code, so it's included)
 create function public.get_mission_by_code(p_code text)
 returns table (
-  id uuid, owner_id uuid, code text, name text, target text, lat double precision, lon double precision, date date,
+  id uuid, owner_id uuid, code text, name text, target text, start_name text, start_lat double precision, start_lon double precision, lat double precision, lon double precision, date date,
   objective text, status text, visibility text, completed_at timestamptz, created_at timestamptz,
   updated_at timestamptz, username text, crew_count int
 )
@@ -269,7 +285,7 @@ language sql
 stable
 security definer set search_path = ''
 as $$
-  select m.id, m.owner_id, m.code, m.name, m.target, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
+  select m.id, m.owner_id, m.code, m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
     m.completed_at, m.created_at, m.updated_at, p.username,
     (select count(*)::int from public.mission_members mm where mm.mission_id = m.id)
   from public.mission_logs m

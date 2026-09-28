@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { formatLat, formatLon } from '../data/mars'
-import { createMarsTextures } from './marsTexture'
+import { getMarsTextures } from './marsTexture'
 
 // Drop an equirectangular Mars map here to replace the procedural surface.
 const TEXTURE_URL = '/resources/mars.jpg'
@@ -31,9 +31,6 @@ type Props = {
   /** Fly the camera to a point; pass a new object each time to fly again. */
   focus?: { lat: number; lon: number } | null
 }
-
-// Generating the surface takes a moment, so share it between globe instances.
-let proceduralCache: ReturnType<typeof createMarsTextures> | null = null
 
 function latLonToVector(lat: number, lon: number, radius = 1) {
   const la = THREE.MathUtils.degToRad(lat)
@@ -94,11 +91,11 @@ export function MarsGlobe({ sites = NO_SITES, selectedId = null, layers, onSelec
     host.prepend(renderer.domElement)
 
     // Surface
-    proceduralCache ??= createMarsTextures(1024)
-    const colorMap = new THREE.CanvasTexture(proceduralCache.color)
+    const procedural = getMarsTextures()
+    const colorMap = new THREE.CanvasTexture(procedural.color)
     colorMap.colorSpace = THREE.SRGBColorSpace
     colorMap.anisotropy = renderer.capabilities.getMaxAnisotropy()
-    const bumpMap = new THREE.CanvasTexture(proceduralCache.bump)
+    const bumpMap = new THREE.CanvasTexture(procedural.bump)
     const material = new THREE.MeshStandardMaterial({ map: colorMap, bumpMap, bumpScale: 2.2, roughness: 0.95, metalness: 0 })
     const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), material)
     scene.add(globe)

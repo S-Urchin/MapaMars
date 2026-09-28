@@ -162,7 +162,7 @@ function MissionList({ title, state, empty, href, showCode, showStatus, showAuth
                   {showStatus && m.visibility === 'unlisted' && <span className="status-badge is-open">Unlisted</span>}
                 </span>
                 <span className="muted">
-                  {[m.target, showAuthor && `led by ${m.commander}`, `${m.crewCount + 1} crew`].filter(Boolean).join(' · ')}
+                  {[`${m.startName} → ${m.target}`, showAuthor && `led by ${m.commander}`, `${m.crewCount + 1} crew`].filter(Boolean).join(' · ')}
                 </span>
               </a>
             </li>

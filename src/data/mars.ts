@@ -74,10 +74,26 @@ export function formatHours(h: number) {
   return [hh, mm, ss].map((n) => String(n).padStart(2, '0')).join(':')
 }
 
-export function formatLat(lat: number) {
-  return `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}`
+export function formatLat(lat: number, digits = 2) {
+  return `${Math.abs(lat).toFixed(digits)}°${lat >= 0 ? 'N' : 'S'}`
 }
 
-export function formatLon(lon: number) {
-  return `${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`
+export function formatLon(lon: number, digits = 2) {
+  return `${Math.abs(lon).toFixed(digits)}°${lon >= 0 ? 'E' : 'W'}`
+}
+
+/** Mean radius of Mars in km. */
+export const MARS_RADIUS_KM = 3389.5
+
+/** Straight-line (great-circle) distance across the surface, in km. Ignores terrain. */
+export function marsDistanceKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const rad = Math.PI / 180
+  const dLat = (b.lat - a.lat) * rad
+  const dLon = (b.lon - a.lon) * rad
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2
+  return 2 * MARS_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+export function formatDistance(km: number) {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(km < 10 ? 2 : 1)} km`
 }
