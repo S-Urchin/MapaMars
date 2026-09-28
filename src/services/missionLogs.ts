@@ -18,6 +18,7 @@ export type MissionLog = {
   startLon: number
   /** Optional stops between start and end, in walking order */
   phases: Phase[]
+  tripType: TripType
   /** Marswalk end point (stored in the older target / lat / lon columns) */
   target: string
   lat: number
@@ -32,6 +33,9 @@ export type MissionLog = {
   updatedAt?: string
 }
 
+/** Linear: start → phases → end. Round: start → phases → back to the start. */
+export type TripType = 'linear' | 'round'
+
 /** An optional stop between the start and end of a Marswalk. */
 export type Phase = { name: string; lat: number; lon: number }
 
@@ -41,7 +45,7 @@ export type CrewMember = { userId: string; username: string; joinedAt: string }
 
 export type MissionFields = Pick<
   MissionLog,
-  'name' | 'startName' | 'startLat' | 'startLon' | 'phases' | 'target' | 'lat' | 'lon' | 'date' | 'objective' | 'visibility'
+  'name' | 'startName' | 'startLat' | 'startLon' | 'phases' | 'tripType' | 'target' | 'lat' | 'lon' | 'date' | 'objective' | 'visibility'
 > & { code: string }
 
 /** Three capital letters, a dash, three digits. */
@@ -58,6 +62,7 @@ type Row = {
   start_lat: number
   start_lon: number
   phases: Phase[] | null
+  trip_type: TripType | null
   target: string
   lat: number
   lon: number
@@ -77,7 +82,7 @@ type Row = {
 // `profiles!owner_id` picks the author: missions also reach profiles through the crew table,
 // so the relationship has to be named.
 const COLUMNS =
-  'id, owner_id, code, name, start_name, start_lat, start_lon, phases, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
+  'id, owner_id, code, name, start_name, start_lat, start_lon, phases, trip_type, target, lat, lon, date, objective, status, visibility, completed_at, created_at, updated_at, author:profiles!owner_id(username), crew:mission_members(count)'
 
 function fromRow(r: Row): MissionLog {
   return {
@@ -90,6 +95,7 @@ function fromRow(r: Row): MissionLog {
     startLat: r.start_lat,
     startLon: r.start_lon,
     phases: r.phases ?? [],
+    tripType: r.trip_type ?? 'linear',
     target: r.target,
     lat: r.lat,
     lon: r.lon,
@@ -123,6 +129,8 @@ function toRow(f: MissionFields) {
     if (!(Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)) throw new Error(`Phase ${i + 1} needs a valid latitude and longitude`)
     return { name: phaseName, lat: round4(p.lat), lon: round4(p.lon) }
   })
+  const round = f.tripType === 'round'
+  if (round && phases.length === 0) throw new Error('A round trip needs at least one phase to walk to before coming back')
   if (f.objective.length > 500) throw new Error('Objective must be 500 characters or fewer')
   return {
     code,
@@ -132,9 +140,11 @@ function toRow(f: MissionFields) {
     start_lat: round4(f.startLat),
     start_lon: round4(f.startLon),
     phases,
-    target,
-    lat: round4(f.lat),
-    lon: round4(f.lon),
+    trip_type: f.tripType,
+    // A round trip ends where it started
+    target: round ? startName : target,
+    lat: round4(round ? f.startLat : f.lat),
+    lon: round4(round ? f.startLon : f.lon),
     date: f.date || null,
     objective: f.objective.trim(),
     visibility: f.visibility,

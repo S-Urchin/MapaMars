@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { CodeInput } from '../../components/CodeInput'
 import { MarsMap2D } from '../../components/MarsMap2D'
 import { formatDistance, formatLat, formatLon } from '../../data/mars'
-import { routeLegs, routeMarkers } from '../../lib/route'
+import { routeLegs, routeMarkers, routeStops } from '../../lib/route'
 import { useNow } from '../../hooks/useNow'
 import { formatCode } from '../../lib/missionCode'
 import type { User } from '../../services/auth'
@@ -50,8 +50,9 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
   // Walking order: A (start) → phases → B (end)
   const start = { name: mission.startName, lat: mission.startLat, lon: mission.startLon }
   const end = { name: mission.target, lat: mission.lat, lon: mission.lon }
-  const stops = [start, ...mission.phases, end]
-  const markers = routeMarkers(start, mission.phases, end)
+  const round = mission.tripType === 'round'
+  const stops = routeStops(start, mission.phases, end, round)
+  const markers = routeMarkers(start, mission.phases, end, round)
   const route = routeLegs(stops)
 
   useEffect(() => {
@@ -154,6 +155,7 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
           {code && <span className="mono-code">{code}</span>}
           <span className={`status-badge is-${mission.status}`}>{complete ? 'Complete' : 'Open'}</span>
           {mission.visibility === 'unlisted' && <span className="status-badge is-open">Unlisted</span>}
+          <span className="status-badge is-open">{round ? '↺ Round trip' : 'Linear'}</span>
           {code && canManage && (
             <button type="button" className="link-button" onClick={copyCode}>{copied ? 'Copied' : 'Copy code'}</button>
           )}
@@ -172,13 +174,15 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
 
         <ol className="route-stops" aria-label="Route">
           {stops.map((stop, i) => {
-            const badge = i === 0 ? 'A' : i === stops.length - 1 ? 'B' : String(i)
-            const variant = i === 0 ? 'start' : i === stops.length - 1 ? 'end' : 'phase'
+            const last = i === stops.length - 1
+            // A round trip finishes back at A
+            const badge = i === 0 || (last && round) ? 'A' : last ? 'B' : String(i)
+            const variant = i === 0 || (last && round) ? 'start' : last ? 'end' : 'phase'
             return (
               <li key={i}>
                 <span className={`point-letter is-${variant}`}>{badge}</span>
                 <span className="route-stop-text">
-                  <span className="plain">{stop.name}</span>
+                  <span className="plain">{stop.name}{last && round ? ' (back to start)' : ''}</span>
                   <span className="muted coord-line">{formatLat(stop.lat, 4)} {formatLon(stop.lon, 4)}</span>
                 </span>
                 {i > 0 && <span className="muted mono-count">+{formatDistance(route.legs[i - 1].km)}</span>}
@@ -254,7 +258,7 @@ export function MissionView({ mission, knownCode, user, canManage, onChanged, on
       </section>
 
       <section className="mission-map">
-        <MarsMap2D points={markers} label={`Route of ${mission.name}`} />
+        <MarsMap2D points={markers} closed={round} label={`Route of ${mission.name}`} />
       </section>
     </main>
   )

@@ -123,6 +123,17 @@ $$;
 alter table public.mission_logs drop constraint if exists mission_logs_phases_check;
 alter table public.mission_logs add constraint mission_logs_phases_check check (public.valid_phases(phases));
 
+-- Trip type: 'linear' goes start -> phases -> end; 'round' goes start -> phases -> back to the start.
+-- A round trip stores its end as a copy of its start, and needs at least one phase to go anywhere.
+alter table public.mission_logs add column if not exists trip_type text not null default 'linear';
+alter table public.mission_logs drop constraint if exists mission_logs_trip_type_check;
+alter table public.mission_logs add constraint mission_logs_trip_type_check check (trip_type in ('linear', 'round'));
+alter table public.mission_logs drop constraint if exists mission_logs_round_trip_check;
+alter table public.mission_logs add constraint mission_logs_round_trip_check check (
+  trip_type = 'linear'
+  or (lat = start_lat and lon = start_lon and target = start_name and jsonb_array_length(phases) >= 1)
+);
+
 -- Stamp edits on the server so clients can't fake them
 create or replace function public.touch_updated_at()
 returns trigger
@@ -263,7 +274,7 @@ drop function if exists public.get_mission_crew(uuid, text);
 -- Browse public open missions ('open') or all completed missions ('complete'). Never includes codes.
 create function public.browse_missions(p_status text)
 returns table (
-  id uuid, owner_id uuid, name text, target text, start_name text, start_lat double precision, start_lon double precision, phases jsonb, lat double precision, lon double precision, date date,
+  id uuid, owner_id uuid, name text, target text, start_name text, start_lat double precision, start_lon double precision, phases jsonb, trip_type text, lat double precision, lon double precision, date date,
   objective text, status text, visibility text, completed_at timestamptz, created_at timestamptz,
   updated_at timestamptz, username text, crew_count int
 )
@@ -271,7 +282,7 @@ language sql
 stable
 security definer set search_path = ''
 as $$
-  select m.id, m.owner_id, m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.phases, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
+  select m.id, m.owner_id, m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.phases, m.trip_type, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
     m.completed_at, m.created_at, m.updated_at, p.username,
     (select count(*)::int from public.mission_members mm where mm.mission_id = m.id)
   from public.mission_logs m
@@ -285,7 +296,7 @@ $$;
 -- The code is only included for insiders.
 create function public.get_mission(p_id uuid)
 returns table (
-  id uuid, owner_id uuid, code text, name text, target text, start_name text, start_lat double precision, start_lon double precision, phases jsonb, lat double precision, lon double precision, date date,
+  id uuid, owner_id uuid, code text, name text, target text, start_name text, start_lat double precision, start_lon double precision, phases jsonb, trip_type text, lat double precision, lon double precision, date date,
   objective text, status text, visibility text, completed_at timestamptz, created_at timestamptz,
   updated_at timestamptz, username text, crew_count int
 )
@@ -295,7 +306,7 @@ security definer set search_path = ''
 as $$
   select m.id, m.owner_id,
     case when public.is_mission_insider(m.id) then m.code end,
-    m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.phases, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
+    m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.phases, m.trip_type, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
     m.completed_at, m.created_at, m.updated_at, p.username,
     (select count(*)::int from public.mission_members mm where mm.mission_id = m.id)
   from public.mission_logs m
@@ -307,7 +318,7 @@ $$;
 -- One mission by its exact code (you already know the code, so it's included)
 create function public.get_mission_by_code(p_code text)
 returns table (
-  id uuid, owner_id uuid, code text, name text, target text, start_name text, start_lat double precision, start_lon double precision, phases jsonb, lat double precision, lon double precision, date date,
+  id uuid, owner_id uuid, code text, name text, target text, start_name text, start_lat double precision, start_lon double precision, phases jsonb, trip_type text, lat double precision, lon double precision, date date,
   objective text, status text, visibility text, completed_at timestamptz, created_at timestamptz,
   updated_at timestamptz, username text, crew_count int
 )
@@ -315,7 +326,7 @@ language sql
 stable
 security definer set search_path = ''
 as $$
-  select m.id, m.owner_id, m.code, m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.phases, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
+  select m.id, m.owner_id, m.code, m.name, m.target, m.start_name, m.start_lat, m.start_lon, m.phases, m.trip_type, m.lat, m.lon, m.date, m.objective, m.status, m.visibility,
     m.completed_at, m.created_at, m.updated_at, p.username,
     (select count(*)::int from public.mission_members mm where mm.mission_id = m.id)
   from public.mission_logs m

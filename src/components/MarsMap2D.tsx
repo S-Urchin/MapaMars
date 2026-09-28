@@ -16,6 +16,8 @@ export type MapPoint = LatLon & {
 
 type Props = {
   points: MapPoint[]
+  /** Draw the route back to the first point (a round trip). */
+  closed?: boolean
   /** Called when the map is clicked (not dragged). Omit for a read-only map. */
   onPick?: (point: LatLon) => void
   /** Move the view here; pass a new object to move again. `span` is the width shown, in degrees. */
@@ -64,7 +66,7 @@ function niceKm(km: number) {
   return (n >= 5 ? 5 : n >= 2 ? 2 : 1) * pow
 }
 
-export function MarsMap2D({ points, onPick, focus, label = 'Map of Mars' }: Props) {
+export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map of Mars' }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 800, h: 450 })
   const [view, setView] = useState(() => initialView(points))
@@ -202,7 +204,10 @@ export function MarsMap2D({ points, onPick, focus, label = 'Map of Mars' }: Prop
             {grid.ys.map((y) => <line key={`y${y}`} x1={0} x2={360} y1={y} y2={y} />)}
           </g>
           {points.length > 1 && (
-            <polyline className="map2d-route" points={points.map((p) => `${toX(p.lon)},${toY(p.lat)}`).join(' ')} />
+            <polyline
+              className="map2d-route"
+              points={(closed ? [...points, points[0]] : points).map((p) => `${toX(p.lon)},${toY(p.lat)}`).join(' ')}
+            />
           )}
         </svg>
 

@@ -3,7 +3,7 @@ import { CodeInput } from '../../components/CodeInput'
 import { MarsMap2D, type LatLon } from '../../components/MarsMap2D'
 import { formatDistance, formatLat, formatLon } from '../../data/mars'
 import { formatCode, sanitizeCode } from '../../lib/missionCode'
-import { routeLegs, routeMarkers, type RouteStop } from '../../lib/route'
+import { routeLegs, routeMarkers, routeStops, type RouteStop } from '../../lib/route'
 import type { User } from '../../services/auth'
 import {
   createMissionLog,
@@ -13,6 +13,7 @@ import {
   updateMissionLog,
   type MissionLog,
   type MissionVisibility,
+  type TripType,
 } from '../../services/missionLogs'
 import { presets } from './shared'
 
@@ -38,7 +39,9 @@ function initialForm(m?: MissionLog) {
     name: m?.name ?? '',
     start: m ? draftOf(m.startName, m.startLat, m.startLon) : emptyPoint(),
     phases: m ? m.phases.map((p) => draftOf(p.name, p.lat, p.lon)) : ([] as PointDraft[]),
-    end: m ? draftOf(m.target, m.lat, m.lon) : emptyPoint(),
+    tripType: (m?.tripType ?? 'linear') as TripType,
+    // A round trip has no separate end point in the form
+    end: m && m.tripType !== 'round' ? draftOf(m.target, m.lat, m.lon) : emptyPoint(),
     date: m?.date ?? '',
     objective: m?.objective ?? '',
     visibility: (m?.visibility ?? 'public') as MissionVisibility,
@@ -66,7 +69,7 @@ const slotLabel = (slot: Slot) => (slot === 'start' ? 'A · start' : slot === 'e
 export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: Props) {
   const editing = !!mission
   const [form, setForm] = useState(() => initialForm(mission))
-  const [placing, setPlacing] = useState<Slot>(mission ? 'end' : 'start')
+  const [placing, setPlacing] = useState<Slot>(mission && mission.tripType !== 'round' ? 'end' : 'start')
   const [raw, setRaw] = useState(() => sanitizeCode(mission?.code ?? ''))
   const [checked, setChecked] = useState<{ raw: string; status: CodeStatus } | null>(null)
   const [suggesting, setSuggesting] = useState(false)
@@ -94,9 +97,12 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
   const start = useMemo(() => stopOf(form.start, 'Start'), [form.start])
   const end = useMemo(() => stopOf(form.end, 'End'), [form.end])
   const phases = useMemo(() => form.phases.map((p, i) => stopOf(p, `Phase ${i + 1}`)), [form.phases])
-  const markers = useMemo(() => routeMarkers(start, phases, end), [start, phases, end])
+  const round = form.tripType === 'round'
+  const markers = useMemo(() => routeMarkers(start, phases, end, round), [start, phases, end, round])
   const phasesComplete = phases.every(Boolean)
-  const route = start && end && phasesComplete ? routeLegs([start, ...(phases as RouteStop[]), end]) : null
+  // A round trip ends back at A, so it needs no B but at least one phase to walk to
+  const routeReady = !!start && phasesComplete && (round ? phases.length > 0 : !!end)
+  const route = routeReady ? routeLegs(routeStops(start!, phases as RouteStop[], (end ?? start)!, round)) : null
 
   const set = (patch: Partial<Form>) => {
     setForm((f) => ({ ...f, ...patch }))
@@ -116,7 +122,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
   // Clicking the map places the selected point, then moves on to the next point that's still empty
   const pick = (p: LatLon) => {
     setDraft(placing, { lat: p.lat.toFixed(4), lon: p.lon.toFixed(4) })
-    const order: Slot[] = ['start', ...form.phases.map((_, i) => i), 'end']
+    const order: Slot[] = ['start', ...form.phases.map((_, i) => i), ...(round ? [] : ['end' as const])]
     const next = order.slice(order.indexOf(placing) + 1).find((slot) => !parsePoint(draftAt(slot)))
     if (next !== undefined) setPlacing(next)
   }
@@ -129,7 +135,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
 
   const removePhase = (i: number) => {
     set({ phases: form.phases.filter((_, j) => j !== i) })
-    if (placing === i) setPlacing('end')
+    if (placing === i) setPlacing(round ? 'start' : 'end')
     else if (typeof placing === 'number' && placing > i) setPlacing(placing - 1)
   }
 
@@ -168,19 +174,24 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
     if (!start) { setFormError('Set a start point: click the map or type its latitude and longitude.'); return }
     const missingPhase = phases.findIndex((p) => !p)
     if (missingPhase >= 0) { setFormError(`Set phase ${missingPhase + 1}’s location, or remove it.`); return }
-    if (!end) { setFormError('Set an end point: click the map or type its latitude and longitude.'); return }
+    if (round && phases.length === 0) { setFormError('A round trip needs at least one phase to walk to before coming back.'); return }
+    if (!round && !end) { setFormError('Set an end point: click the map or type its latitude and longitude.'); return }
     setSaving(true)
     setFormError(null)
+    const startName = form.start.name.trim() || coordName(start)
+    // A round trip finishes at the start
+    const finish = round || !end ? { ...start, name: startName } : { ...end, name: form.end.name.trim() || coordName(end) }
     const fields = {
       code,
       name: form.name,
-      startName: form.start.name.trim() || coordName(start),
+      tripType: form.tripType,
+      startName,
       startLat: start.lat,
       startLon: start.lon,
       phases: (phases as RouteStop[]).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
-      target: form.end.name.trim() || coordName(end),
-      lat: end.lat,
-      lon: end.lon,
+      target: finish.name,
+      lat: finish.lat,
+      lon: finish.lon,
       date: form.date,
       objective: form.objective,
       visibility: form.visibility,
@@ -239,7 +250,12 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
     )
   }
 
-  const slots: Slot[] = ['start', ...form.phases.map((_, i) => i), 'end']
+  const slots: Slot[] = ['start', ...form.phases.map((_, i) => i), ...(round ? [] : ['end' as const])]
+
+  const setTripType = (tripType: TripType) => {
+    set({ tripType })
+    if (tripType === 'round' && placing === 'end') setPlacing('start')
+  }
 
   return (
     <main className="missions-page">
@@ -280,6 +296,19 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
               <input value={form.name} onChange={(e) => set({ name: e.target.value })} maxLength={80} required placeholder="e.g. Delta Survey I" />
             </label>
 
+            <fieldset className="trip-type">
+              <legend>Trip type</legend>
+              {([
+                ['linear', 'Linear', 'Start at A, finish somewhere else (B).'],
+                ['round', 'Round trip', 'Start at A and come back to A. Needs at least one phase.'],
+              ] as const).map(([value, label, hint]) => (
+                <label key={value} className="radio-option">
+                  <input type="radio" name="trip-type" value={value} checked={form.tripType === value} onChange={() => setTripType(value)} />
+                  <span><span className="plain">{label}</span><span className="muted">{hint}</span></span>
+                </label>
+              ))}
+            </fieldset>
+
             {pointFields('start')}
 
             <section className="phases" aria-label="Phases">
@@ -294,7 +323,11 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
               </button>
             </section>
 
-            {pointFields('end')}
+            {round ? (
+              <p className="muted round-note">↺ The walk finishes back at the start point (A).</p>
+            ) : (
+              pointFields('end')
+            )}
 
             <div className="route-summary" aria-live="polite">
               {route ? (
@@ -307,7 +340,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
                   )}
                 </>
               ) : (
-                <p className="muted">Set every point to see the distance.</p>
+                <p className="muted">{round && start && phases.length === 0 ? 'Add at least one phase for a round trip.' : 'Set every point to see the distance.'}</p>
               )}
             </div>
 
@@ -366,7 +399,7 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
             </label>
           </div>
         )}
-        <MarsMap2D points={markers} onPick={user ? pick : undefined} focus={focus} label="Marswalk planning map" />
+        <MarsMap2D points={markers} closed={round} onPick={user ? pick : undefined} focus={focus} label="Marswalk planning map" />
         {user && <p className="muted map-hint">Click the map to place <strong className="plain">{slotLabel(placing)}</strong>. Drag to pan, scroll to zoom.</p>}
       </section>
     </main>
