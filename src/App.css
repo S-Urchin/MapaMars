@@ -397,7 +397,8 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .account-page .switch-mode { margin: 24px 0 0; font-size: 14px; }
 
 /* 2D Marswalk map */
-.mission-map { grid-area: globe; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* The map stays in view while the long form scrolls */
+.mission-map { grid-area: globe; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 76px; align-self: start; }
 .map-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .map-toolbar .toggles { justify-content: flex-start; }
 .jump-to select { padding: 6px 12px; font: 13px var(--sans); color: var(--white); background: var(--black); border: 1px solid var(--line); border-radius: 999px; }
@@ -455,15 +456,9 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .map2d-readout { position: absolute; right: 12px; bottom: 10px; font: 12px var(--mono); color: var(--white); text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none; }
 .map2d-source { margin: 0; font-size: 12px; }
 
-/* Start / end point fields */
-.point-field { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
-.point-field.is-placing { border-color: var(--white); }
-.point-field legend { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; color: var(--gray-1); }
-.point-field .span-2 { grid-column: 1 / -1; }
 .point-letter { width: 20px; height: 20px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; border-radius: 50%; }
 .point-letter.is-start { color: var(--black); background: var(--white); }
 .point-letter.is-end { color: var(--white); border: 1.5px solid var(--white); }
-.route-summary { margin: 0; font-size: 14px; }
 .coord-line { display: block; font-family: var(--mono); font-size: 12px; }
 
 button.button { border: 0; font: inherit; font-weight: 500; cursor: pointer; }
@@ -688,6 +683,7 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1000px) {
+  .mission-map { position: static; }
   .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .feature:nth-child(3) { padding-left: 0; border-left: 0; }
   .feature:nth-child(n + 3) { border-top: 1px solid var(--line); }
@@ -723,16 +719,11 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .phases { display: flex; flex-direction: column; gap: 10px; }
 .phases-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--gray-1); }
 .phases-head em { font-style: normal; }
-.phases-hint { margin: 0; font-size: 13px; }
-.add-phase { align-self: flex-start; padding: 7px 16px; font-size: 14px; }
-.phase-controls { display: flex; align-items: center; gap: 6px; }
-.phase-controls .link-button { margin-right: auto; font-size: 13px; }
 .icon-btn { width: 28px; height: 28px; padding: 0; font-size: 13px; background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
 .icon-btn:hover:not(:disabled) { border-color: var(--white); }
 .icon-btn:disabled { opacity: 0.3; cursor: default; }
 .point-letter.is-phase { color: var(--white); background: rgba(255, 255, 255, 0.18); }
 .map2d-marker.is-phase .map2d-pin { width: 20px; height: 20px; margin: 2px; font-size: 11px; color: var(--black); background: rgba(255, 255, 255, 0.85); }
-.route-summary p { margin: 0; }
 .legs { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--gray-1); }
 .legs li { display: flex; justify-content: space-between; gap: 12px; }
 .route-stops { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -741,7 +732,52 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .route-stop-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .route-stops .mono-count { font-size: 12px; }
 
-/* Trip type */
-.trip-type { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; }
-.trip-type legend { margin-bottom: 8px; padding: 0; font-size: 13px; color: var(--gray-1); }
 .round-note { margin: 0; padding: 10px 12px; font-size: 13px; border: 1px dashed var(--line); border-radius: 8px; }
+
+/* Marswalk form: numbered sections, compact point cards, pinned footer */
+.walk-form { gap: 16px; }
+.form-section { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.form-section h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; font-weight: 500; }
+.form-section h2 em { font-size: 12px; font-style: normal; font-weight: 400; }
+.step { width: 22px; height: 22px; display: inline-grid; place-items: center; font: 600 12px var(--mono); color: var(--black); background: var(--white); border-radius: 50%; }
+.form-section .code-field { padding: 12px 8px; }
+
+.choice { display: flex; flex-direction: column; gap: 6px; }
+.segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; border: 1px solid var(--line); border-radius: 999px; }
+.segmented button { padding: 7px 10px; font-size: 13px; white-space: pre; color: var(--gray-1); background: none; border: 0; border-radius: 999px; cursor: pointer; }
+.segmented button:hover { color: var(--white); }
+.segmented button.is-on { color: var(--black); background: var(--white); }
+.choice-hint { margin: 0; font-size: 12px; line-height: 1.5; }
+
+.point-card { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.point-card.is-placing { border-color: var(--white); box-shadow: 0 0 0 1px var(--white); }
+.point-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.point-title { font-size: 14px; font-weight: 500; }
+.point-set { font-size: 12px; color: var(--gray-1); }
+.place-btn { margin-left: auto; padding: 4px 10px; font-size: 12px; color: var(--gray-1); background: none; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+.place-btn:hover { color: var(--white); border-color: var(--white); }
+.place-btn.is-on { color: var(--black); background: var(--white); border-color: var(--white); }
+.phase-controls { display: flex; gap: 4px; }
+.point-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.point-grid .span-2 { grid-column: 1 / -1; }
+.point-grid label { gap: 4px; font-size: 12px; }
+.point-grid input { padding: 8px 10px; font-size: 14px; }
+
+.phases { display: flex; flex-direction: column; gap: 8px; padding-left: 12px; border-left: 1px dashed var(--line); }
+.add-phase { align-self: stretch; padding: 8px; font: 13px var(--sans); color: var(--gray-1); background: none; border: 1px dashed var(--line); border-radius: 8px; cursor: pointer; }
+.add-phase:hover:not(:disabled) { color: var(--white); border-color: var(--white); }
+.add-phase:disabled { opacity: 0.4; cursor: not-allowed; }
+.legs { margin: 0; }
+
+.form-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 16px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), var(--black) 30%);
+  border-top: 1px solid var(--line);
+}
+.form-footer-summary { margin: 0; font-size: 14px; }

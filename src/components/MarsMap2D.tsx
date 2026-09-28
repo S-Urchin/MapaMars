@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { isConnected, nasaData } from '../config/nasaData'
 import { formatLat, formatLon, MARS_RADIUS_KM } from '../data/mars'
 import { getMarsTextures } from './marsTexture'
@@ -29,7 +29,6 @@ type Props = {
 const toX = (lon: number) => lon + 180
 const toY = (lat: number) => 90 - lat
 const MIN_SPAN = 0.02 // about 1.2 km across at the equator: Marswalk scale
-const MAX_SPAN = 400
 
 // Imagery: the NASA source once connected, else a custom image, else the generated texture
 const CUSTOM_IMAGE = '/resources/mars.jpg'
@@ -57,16 +56,35 @@ function useMapImage(): MapImage | null {
   return image
 }
 
+type View = { cx: number; cy: number; w: number }
+
 // Fit all points in view, or show the whole planet when there are none
-function initialView(points: LatLon[]) {
+function initialView(points: LatLon[]): View {
   if (points.length === 0) return { cx: 180, cy: 90, w: 360 }
   if (points.length === 1) return { cx: toX(points[0].lon), cy: toY(points[0].lat), w: 20 }
   const lons = points.map((p) => p.lon)
   const lats = points.map((p) => p.lat)
   const [minLon, maxLon, minLat, maxLat] = [Math.min(...lons), Math.max(...lons), Math.min(...lats), Math.max(...lats)]
   const span = Math.max(maxLon - minLon, (maxLat - minLat) * 2) * 1.6
-  return { cx: toX((minLon + maxLon) / 2), cy: toY((minLat + maxLat) / 2), w: Math.min(MAX_SPAN, Math.max(span, 0.1)) }
+  return { cx: toX((minLon + maxLon) / 2), cy: toY((minLat + maxLat) / 2), w: Math.max(span, 0.1) }
 }
+
+/**
+ * Keeps the view on the planet: longitude wraps around (the map is continuous east–west),
+ * latitude stops at the poles, and you can't zoom out past the planet's full height.
+ */
+function clampView(v: View, size: { w: number; h: number }): View {
+  const aspect = size.h / size.w
+  const maxW = Math.min(360, 180 / aspect)
+  const w = Math.min(maxW, Math.max(MIN_SPAN, v.w))
+  const h = w * aspect
+  const cx = ((v.cx % 360) + 360) % 360
+  const cy = Math.min(180 - h / 2, Math.max(h / 2, v.cy))
+  return { w, cx, cy }
+}
+
+/** The copy of x (x ± 360·k) closest to the view centre, so points near the wrap line show up. */
+const nearest = (x: number, cx: number) => x + 360 * Math.round((cx - x) / 360)
 
 const GRID_STEPS = [30, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005]
 
@@ -80,11 +98,13 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 800, h: 450 })
-  const [view, setView] = useState(() => initialView(points))
+  const [rawView, setView] = useState(() => initialView(points))
   const [hover, setHover] = useState<LatLon | null>(null)
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: number } | null>(null)
   const image = useMapImage()
 
+  // Clamp during render too, so a resize or a new focus can never show space off the planet
+  const view = clampView(rawView, size)
   const h = view.w * (size.h / size.w)
   const left = view.cx - view.w / 2
   const top = view.cy - h / 2
@@ -97,9 +117,9 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     return () => ro.disconnect()
   }, [])
 
-  // Paint only the visible part of the imagery, at screen resolution. Drawing the whole image
-  // stretched (as an SVG <image>) makes the browser paint it thousands of times larger at deep zoom.
-  useEffect(() => {
+  // Paint only the visible part of the imagery, at screen resolution, before the browser shows the
+  // frame (layout effect), so the image never lags behind the markers while dragging.
+  useLayoutEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -111,23 +131,26 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     }
     const ctx = canvas.getContext('2d')!
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.fillStyle = '#000'
+    ctx.fillStyle = '#1a0d08'
     ctx.fillRect(0, 0, pw, ph)
     if (!image) return
-    // Visible map area, clipped to the planet (0..360 x 0..180)
-    const x0 = Math.max(0, left)
-    const x1 = Math.min(360, left + view.w)
-    const y0 = Math.max(0, top)
-    const y1 = Math.min(180, top + h)
-    if (x1 <= x0 || y1 <= y0) return
     const pxPerUnit = pw / view.w
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(
-      image.source,
-      (x0 / 360) * image.width, (y0 / 180) * image.height, ((x1 - x0) / 360) * image.width, ((y1 - y0) / 180) * image.height,
-      (x0 - left) * pxPerUnit, (y0 - top) * pxPerUnit, (x1 - x0) * pxPerUnit, (y1 - y0) * pxPerUnit,
-    )
+    const y0 = Math.max(0, top)
+    const y1 = Math.min(180, top + h)
+    // The view can straddle the 180° line, so draw each copy of the planet it overlaps
+    for (let k = Math.floor(left / 360); k * 360 < left + view.w; k++) {
+      const x0 = Math.max(left, k * 360)
+      const x1 = Math.min(left + view.w, (k + 1) * 360)
+      if (x1 <= x0 || y1 <= y0) continue
+      const sx = x0 - k * 360
+      ctx.drawImage(
+        image.source,
+        (sx / 360) * image.width, (y0 / 180) * image.height, ((x1 - x0) / 360) * image.width, ((y1 - y0) / 180) * image.height,
+        (x0 - left) * pxPerUnit, (y0 - top) * pxPerUnit, (x1 - x0) * pxPerUnit, (y1 - y0) * pxPerUnit,
+      )
+    }
   }, [image, left, top, view.w, h, size])
 
   // Move the view when a new `focus` arrives (adjusting state during render, not in an effect)
@@ -137,19 +160,15 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     if (focus) setView((v) => ({ cx: toX(focus.lon), cy: toY(focus.lat), w: focus.span ?? Math.min(v.w, 10) }))
   }
 
-  const clampView = (v: { cx: number; cy: number; w: number }) => {
-    const w = Math.min(MAX_SPAN, Math.max(MIN_SPAN, v.w))
-    return { w, cx: Math.min(360, Math.max(0, v.cx)), cy: Math.min(180, Math.max(0, v.cy)) }
-  }
-
   const zoomAt = (factor: number, px = size.w / 2, py = size.h / 2) => {
-    setView((v) => {
+    setView((raw) => {
+      const v = clampView(raw, size)
       const vh = v.w * (size.h / size.w)
       const mx = v.cx - v.w / 2 + (px / size.w) * v.w
       const my = v.cy - vh / 2 + (py / size.h) * vh
-      const w = Math.min(MAX_SPAN, Math.max(MIN_SPAN, v.w * factor))
+      const w = clampView({ ...v, w: v.w * factor }, size).w
       const nh = w * (size.h / size.w)
-      return clampView({ w, cx: mx - (px / size.w - 0.5) * w, cy: my - (py / size.h - 0.5) * nh })
+      return clampView({ w, cx: mx - (px / size.w - 0.5) * w, cy: my - (py / size.h - 0.5) * nh }, size)
     })
   }
 
@@ -169,8 +188,9 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     const rect = hostRef.current!.getBoundingClientRect()
     const x = left + ((clientX - rect.left) / rect.width) * view.w
     const y = top + ((clientY - rect.top) / rect.height) * h
-    if (x < 0 || x > 360 || y < 0 || y > 180) return null
-    return { lat: 90 - y, lon: x - 180 }
+    if (y < 0 || y > 180) return null
+    const lon = ((((x - 180) % 360) + 540) % 360) - 180 // wrap into -180..180
+    return { lat: 90 - y, lon }
   }
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -185,7 +205,7 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
     d.moved = Math.max(d.moved, Math.hypot(dx, dy))
-    setView((v) => clampView({ ...v, cx: d.cx - dx * unitsPerPx, cy: d.cy - dy * unitsPerPx }))
+    setView((v) => clampView({ ...v, cx: d.cx - dx * unitsPerPx, cy: d.cy - dy * unitsPerPx }, size))
   }
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current
@@ -201,19 +221,18 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
     if (moves[e.key]) {
       e.preventDefault()
-      setView((v) => clampView({ ...v, cx: v.cx + moves[e.key][0], cy: v.cy + moves[e.key][1] }))
+      setView((v) => clampView({ ...v, cx: v.cx + moves[e.key][0], cy: v.cy + moves[e.key][1] }, size))
     } else if (e.key === '+' || e.key === '=') zoomAt(0.8)
     else if (e.key === '-') zoomAt(1.25)
   }
 
   // Grid lines at a spacing that suits the zoom level: the finest step that still gives at most
-  // about 12 lines across. Zoomed out past the whole planet, nothing fits, so use the coarsest step.
+  // about 12 lines across. The cap is a safety net: a grid never needs more than a few dozen lines.
   const grid = useMemo(() => {
     const step = [...GRID_STEPS].reverse().find((s) => view.w / s <= 12) ?? GRID_STEPS[0]
     const xs: number[] = []
     const ys: number[] = []
-    // The cap is a safety net: a grid should never need more than a few dozen lines
-    for (let x = Math.ceil(Math.max(0, left) / step) * step; x <= Math.min(360, left + view.w) && xs.length < 60; x += step) xs.push(x)
+    for (let x = Math.ceil(left / step) * step; x <= left + view.w && xs.length < 60; x += step) xs.push(x)
     for (let y = Math.ceil(Math.max(0, top) / step) * step; y <= Math.min(180, top + h) && ys.length < 60; y += step) ys.push(y)
     return { xs, ys }
   }, [left, top, view.w, h])
@@ -226,7 +245,9 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     return { km, px: km / (unitsPerPx * kmPerDeg) }
   }, [view.cy, unitsPerPx])
 
-  const toPx = (p: LatLon) => ({ x: (toX(p.lon) - left) / unitsPerPx, y: (toY(p.lat) - top) / unitsPerPx })
+  // Map position of a point, using whichever copy of the planet is on screen
+  const mapX = (p: LatLon) => nearest(toX(p.lon), view.cx)
+  const toPx = (p: LatLon) => ({ x: (mapX(p) - left) / unitsPerPx, y: (toY(p.lat) - top) / unitsPerPx })
 
   return (
     <div className="map2d">
@@ -246,12 +267,12 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
         <svg viewBox={`${left} ${top} ${view.w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
           <g className="map2d-grid">
             {grid.xs.map((x) => <line key={`x${x}`} x1={x} x2={x} y1={0} y2={180} />)}
-            {grid.ys.map((y) => <line key={`y${y}`} x1={0} x2={360} y1={y} y2={y} />)}
+            {grid.ys.map((y) => <line key={`y${y}`} x1={left} x2={left + view.w} y1={y} y2={y} />)}
           </g>
           {points.length > 1 && (
             <polyline
               className="map2d-route"
-              points={(closed ? [...points, points[0]] : points).map((p) => `${toX(p.lon)},${toY(p.lat)}`).join(' ')}
+              points={(closed ? [...points, points[0]] : points).map((p) => `${mapX(p)},${toY(p.lat)}`).join(' ')}
             />
           )}
         </svg>

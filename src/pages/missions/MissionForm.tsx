@@ -218,34 +218,40 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
     const badge = slot === 'start' ? 'A' : slot === 'end' ? 'B' : String(slot + 1)
     const title = slot === 'start' ? 'Start point' : slot === 'end' ? 'End point' : `Phase ${slot + 1}`
     const placeholder = slot === 'start' ? 'e.g. Habitat' : slot === 'end' ? 'e.g. Delta outcrop' : 'e.g. Crater rim sample stop'
+    const isPlacing = placing === slot
+    const placed = !!parsePoint(draft)
     return (
-      <fieldset key={String(slot)} className={`point-field${placing === slot ? ' is-placing' : ''}`}>
-        <legend>
+      <fieldset key={String(slot)} className={`point-card${isPlacing ? ' is-placing' : ''}`}>
+        <legend className="visually-hidden">{title}</legend>
+        <div className="point-head">
           <span className={`point-letter is-${isPhase ? 'phase' : slot}`}>{badge}</span>
-          {title}
-        </legend>
-        {isPhase && (
-          <div className="phase-controls span-2">
-            <button type="button" className="link-button" onClick={() => setPlacing(slot)} disabled={placing === slot}>
-              {placing === slot ? 'Placing on map' : 'Place on map'}
-            </button>
-            <button type="button" className="icon-btn" onClick={() => movePhase(slot, -1)} disabled={slot === 0} aria-label={`Move phase ${slot + 1} earlier`}>↑</button>
-            <button type="button" className="icon-btn" onClick={() => movePhase(slot, 1)} disabled={slot === form.phases.length - 1} aria-label={`Move phase ${slot + 1} later`}>↓</button>
-            <button type="button" className="icon-btn" onClick={() => removePhase(slot)} aria-label={`Remove phase ${slot + 1}`}>✕</button>
-          </div>
-        )}
-        <label className="span-2">
-          <span>{isPhase ? 'Phase name' : 'Place name'} <em className="muted">optional</em></span>
-          <input value={draft.name} onChange={(e) => setDraft(slot, { name: e.target.value })} maxLength={80} placeholder={placeholder} />
-        </label>
-        <label>
-          <span>Latitude</span>
-          <input value={draft.lat} onChange={(e) => setDraft(slot, { lat: e.target.value })} inputMode="decimal" placeholder="-90 to 90" />
-        </label>
-        <label>
-          <span>Longitude (east)</span>
-          <input value={draft.lon} onChange={(e) => setDraft(slot, { lon: e.target.value })} inputMode="decimal" placeholder="-180 to 180" />
-        </label>
+          <span className="point-title">{title}</span>
+          {placed && !isPlacing && <span className="point-set" aria-label="location set">✓</span>}
+          <button type="button" className={`place-btn${isPlacing ? ' is-on' : ''}`} onClick={() => setPlacing(slot)} aria-pressed={isPlacing}>
+            {isPlacing ? 'Click the map' : 'Place on map'}
+          </button>
+          {isPhase && (
+            <span className="phase-controls">
+              <button type="button" className="icon-btn" onClick={() => movePhase(slot, -1)} disabled={slot === 0} aria-label={`Move phase ${slot + 1} earlier`}>↑</button>
+              <button type="button" className="icon-btn" onClick={() => movePhase(slot, 1)} disabled={slot === form.phases.length - 1} aria-label={`Move phase ${slot + 1} later`}>↓</button>
+              <button type="button" className="icon-btn" onClick={() => removePhase(slot)} aria-label={`Remove phase ${slot + 1}`}>✕</button>
+            </span>
+          )}
+        </div>
+        <div className="point-grid">
+          <label className="span-2">
+            <span>Name <em className="muted">optional</em></span>
+            <input value={draft.name} onChange={(e) => setDraft(slot, { name: e.target.value })} maxLength={80} placeholder={placeholder} />
+          </label>
+          <label>
+            <span>Latitude</span>
+            <input value={draft.lat} onChange={(e) => setDraft(slot, { lat: e.target.value })} inputMode="decimal" placeholder="-90 to 90" />
+          </label>
+          <label>
+            <span>Longitude (east)</span>
+            <input value={draft.lon} onChange={(e) => setDraft(slot, { lon: e.target.value })} inputMode="decimal" placeholder="-180 to 180" />
+          </label>
+        </div>
       </fieldset>
     )
   }
@@ -271,105 +277,118 @@ export function MissionForm({ user, authLoading, mission, onSaved, onCancel }: P
             <a className="button" href="#/account">Sign in or create an account</a>
           </div>
         ) : (
-          <form className="mission-form" onSubmit={submit} noValidate>
-            <div className="code-field">
-              <span className="field-label">Mission code</span>
-              <CodeInput
-                value={raw}
-                onChange={(next) => { setRaw(next); setFormError(null) }}
-                label="Mission code: three letters, then three numbers"
-                autoFocus={!editing}
-                invalid={codeStatus === 'taken'}
-                describedBy="code-status"
-              />
-              <p id="code-status" className={`code-status is-${codeStatus}`} aria-live="polite">
-                {codeStatus === 'available' && <span aria-hidden="true">✓ </span>}
-                {statusText[codeStatus]}
-              </p>
-              <button type="button" className="link-button" onClick={suggest} disabled={suggesting}>
-                {suggesting ? 'Finding a free code…' : 'Suggest a random code'}
-              </button>
-            </div>
-
-            <label>
-              <span>Mission name</span>
-              <input value={form.name} onChange={(e) => set({ name: e.target.value })} maxLength={80} required placeholder="e.g. Delta Survey I" />
-            </label>
-
-            <fieldset className="trip-type">
-              <legend>Trip type</legend>
-              {([
-                ['linear', 'Linear', 'Start at A, finish somewhere else (B).'],
-                ['round', 'Round trip', 'Start at A and come back to A. Needs at least one phase.'],
-              ] as const).map(([value, label, hint]) => (
-                <label key={value} className="radio-option">
-                  <input type="radio" name="trip-type" value={value} checked={form.tripType === value} onChange={() => setTripType(value)} />
-                  <span><span className="plain">{label}</span><span className="muted">{hint}</span></span>
-                </label>
-              ))}
-            </fieldset>
-
-            {pointFields('start')}
-
-            <section className="phases" aria-label="Phases">
-              <div className="phases-head">
-                <span>Phases <em className="muted">optional</em></span>
-                <span className="muted">{form.phases.length}/{MAX_PHASES}</span>
+          <form className="mission-form walk-form" onSubmit={submit} noValidate>
+            <section className="form-section" aria-labelledby="sec-mission">
+              <h2 id="sec-mission"><span className="step">1</span> Mission</h2>
+              <div className="code-field">
+                <span className="field-label">Mission code</span>
+                <CodeInput
+                  value={raw}
+                  onChange={(next) => { setRaw(next); setFormError(null) }}
+                  label="Mission code: three letters, then three numbers"
+                  autoFocus={!editing}
+                  invalid={codeStatus === 'taken'}
+                  describedBy="code-status"
+                />
+                <p id="code-status" className={`code-status is-${codeStatus}`} aria-live="polite">
+                  {codeStatus === 'available' && <span aria-hidden="true">✓ </span>}
+                  {statusText[codeStatus]}
+                </p>
+                <button type="button" className="link-button" onClick={suggest} disabled={suggesting}>
+                  {suggesting ? 'Finding a free code…' : 'Suggest a random code'}
+                </button>
               </div>
-              {form.phases.length === 0 && <p className="muted phases-hint">Add stops between the start and end, in the order you’ll walk them.</p>}
-              {form.phases.map((_, i) => pointFields(i))}
-              <button type="button" className="button-outline add-phase" onClick={addPhase} disabled={form.phases.length >= MAX_PHASES}>
-                + Add phase
-              </button>
+              <label>
+                <span>Mission name</span>
+                <input value={form.name} onChange={(e) => set({ name: e.target.value })} maxLength={80} required placeholder="e.g. Delta Survey I" />
+              </label>
             </section>
 
-            {round ? (
-              <p className="muted round-note">↺ The walk finishes back at the start point (A).</p>
-            ) : (
-              pointFields('end')
-            )}
+            <section className="form-section" aria-labelledby="sec-route">
+              <h2 id="sec-route"><span className="step">2</span> Route</h2>
+              <div className="choice">
+                <div className="segmented" role="radiogroup" aria-label="Trip type">
+                  {([['linear', 'Linear  A → B'], ['round', 'Round trip  A ↺']] as const).map(([value, label]) => (
+                    <button key={value} type="button" role="radio" aria-checked={form.tripType === value} className={form.tripType === value ? 'is-on' : ''} onClick={() => setTripType(value)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="muted choice-hint">
+                  {round ? 'Start at A, visit your phases, and come back to A. Needs at least one phase.' : 'Start at A and finish somewhere else, at B.'}
+                </p>
+              </div>
 
-            <div className="route-summary" aria-live="polite">
-              {route ? (
-                <>
-                  <p>Straight-line distance: <strong className="plain">{formatDistance(route.totalKm)}</strong> <span className="muted">(derived; terrain not included yet)</span></p>
-                  {route.legs.length > 1 && (
-                    <ol className="legs">
-                      {route.legs.map((leg, i) => <li key={i}><span>{leg.from} → {leg.to}</span><span className="mono-count">{formatDistance(leg.km)}</span></li>)}
-                    </ol>
-                  )}
-                </>
-              ) : (
-                <p className="muted">{round && start && phases.length === 0 ? 'Add at least one phase for a round trip.' : 'Set every point to see the distance.'}</p>
+              {pointFields('start')}
+
+              <div className="phases" aria-label="Phases">
+                <div className="phases-head">
+                  <span>Phases <em className="muted">optional · stops in walking order</em></span>
+                  <span className="muted">{form.phases.length}/{MAX_PHASES}</span>
+                </div>
+                {form.phases.map((_, i) => pointFields(i))}
+                <button type="button" className="add-phase" onClick={addPhase} disabled={form.phases.length >= MAX_PHASES}>
+                  + Add phase
+                </button>
+              </div>
+
+              {round ? <p className="muted round-note">↺ Finishes back at the start point (A).</p> : pointFields('end')}
+
+              {route && route.legs.length > 1 && (
+                <ol className="legs" aria-label="Legs">
+                  {route.legs.map((leg, i) => <li key={i}><span>{leg.from} → {leg.to}</span><span className="mono-count">{formatDistance(leg.km)}</span></li>)}
+                </ol>
               )}
-            </div>
+            </section>
 
-            <label>
-              <span>Planned date <em className="muted">optional</em></span>
-              <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
-            </label>
-            <label>
-              <span>Objective <em className="muted">optional</em></span>
-              <textarea value={form.objective} onChange={(e) => set({ objective: e.target.value })} maxLength={500} rows={3} placeholder="What will this Marswalk do?" />
-            </label>
-            <fieldset className="visibility-field">
-              <legend>Who can find it</legend>
-              {([
-                ['public', 'Public', 'Anyone can see it and its crew when browsing. Joining still needs the code.'],
-                ['unlisted', 'Unlisted', 'Only people with the code can open it, until it’s completed.'],
-              ] as const).map(([value, label, hint]) => (
-                <label key={value} className="radio-option">
-                  <input type="radio" name="visibility" value={value} checked={form.visibility === value} onChange={() => set({ visibility: value })} />
-                  <span><span className="plain">{label}</span><span className="muted">{hint}</span></span>
-                </label>
-              ))}
-            </fieldset>
-            {formError && <p className="form-error" role="alert">{formError}</p>}
-            <div className="form-actions">
-              <button className="button" type="submit" disabled={saving || !form.name.trim() || codeStatus !== 'available' || !route}>
-                {saving ? 'Saving…' : editing ? 'Save changes' : 'Create Marswalk'}
-              </button>
-              <button type="button" className="button-outline" onClick={onCancel}>Cancel</button>
+            <section className="form-section" aria-labelledby="sec-details">
+              <h2 id="sec-details"><span className="step">3</span> Details <em className="muted">optional</em></h2>
+              <label>
+                <span>Planned date</span>
+                <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
+              </label>
+              <label>
+                <span>Objective</span>
+                <textarea value={form.objective} onChange={(e) => set({ objective: e.target.value })} maxLength={500} rows={3} placeholder="What will this Marswalk do?" />
+              </label>
+            </section>
+
+            <section className="form-section" aria-labelledby="sec-visibility">
+              <h2 id="sec-visibility"><span className="step">4</span> Visibility</h2>
+              <div className="choice">
+                <div className="segmented" role="radiogroup" aria-label="Who can find it">
+                  {([['public', 'Public'], ['unlisted', 'Unlisted']] as const).map(([value, label]) => (
+                    <button key={value} type="button" role="radio" aria-checked={form.visibility === value} className={form.visibility === value ? 'is-on' : ''} onClick={() => set({ visibility: value })}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="muted choice-hint">
+                  {form.visibility === 'public'
+                    ? 'Anyone can see it and its crew when browsing. Joining still needs the code.'
+                    : 'Only people with the code can open it, until it’s completed.'}
+                </p>
+              </div>
+            </section>
+
+            <div className="form-footer">
+              <p className="form-footer-summary" aria-live="polite">
+                {route ? (
+                  <>
+                    <strong className="plain">{formatDistance(route.totalKm)}</strong>
+                    <span className="muted"> straight line{form.phases.length ? ` · ${form.phases.length} phase${form.phases.length === 1 ? '' : 's'}` : ''}{round ? ' · round trip' : ''}</span>
+                  </>
+                ) : (
+                  <span className="muted">{round && start && phases.length === 0 ? 'Add at least one phase for a round trip.' : 'Set every point to see the distance.'}</span>
+                )}
+              </p>
+              {formError && <p className="form-error" role="alert">{formError}</p>}
+              <div className="form-actions">
+                <button className="button" type="submit" disabled={saving || !form.name.trim() || codeStatus !== 'available' || !route}>
+                  {saving ? 'Saving…' : editing ? 'Save changes' : 'Create Marswalk'}
+                </button>
+                <button type="button" className="button-outline" onClick={onCancel}>Cancel</button>
+              </div>
             </div>
           </form>
         )}
