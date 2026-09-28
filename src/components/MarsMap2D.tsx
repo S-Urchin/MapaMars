@@ -110,9 +110,13 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
   const top = view.cy - h / 2
   const unitsPerPx = view.w / size.w
 
-  useEffect(() => {
+  // Measure before the first paint (layout effect) so markers and the route line never start misaligned,
+  // then keep measuring as the map resizes
+  useLayoutEffect(() => {
     const el = hostRef.current!
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth || 1, h: el.clientHeight || 1 }))
+    const measure = () => setSize({ w: el.clientWidth || 1, h: el.clientHeight || 1 })
+    measure()
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -247,7 +251,9 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
 
   // Map position of a point, using whichever copy of the planet is on screen
   const mapX = (p: LatLon) => nearest(toX(p.lon), view.cx)
-  const toPx = (p: LatLon) => ({ x: (mapX(p) - left) / unitsPerPx, y: (toY(p.lat) - top) / unitsPerPx })
+  // Marker positions as percentages of the map, exactly like the SVG route and grid scale,
+  // so they stay aligned even if a size measurement is momentarily out of date
+  const toPct = (p: LatLon) => ({ x: ((mapX(p) - left) / view.w) * 100, y: ((toY(p.lat) - top) / h) * 100 })
 
   return (
     <div className="map2d">
@@ -278,9 +284,9 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
         </svg>
 
         {points.map((p) => {
-          const at = toPx(p)
+          const at = toPct(p)
           return (
-            <div key={p.key} className={`map2d-marker is-${p.variant}`} style={{ transform: `translate(${at.x}px, ${at.y}px)` }}>
+            <div key={p.key} className={`map2d-marker is-${p.variant}`} style={{ left: `${at.x}%`, top: `${at.y}%` }}>
               <span className="map2d-pin">{p.badge}</span><span className="map2d-label">{p.label}</span>
             </div>
           )
