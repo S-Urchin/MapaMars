@@ -420,7 +420,8 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .map2d-surface:active { cursor: grabbing; }
 .map2d-surface.is-pickable { cursor: crosshair; }
 .map2d-surface:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
-.map2d-surface svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.map2d-surface svg,
+.map2d-image { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .map2d-grid line { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .map2d-route { fill: none; stroke: var(--white); stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
 .map2d-marker { position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 6px; margin: -12px 0 0 -12px; pointer-events: none; }

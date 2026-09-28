@@ -33,18 +33,28 @@ const MAX_SPAN = 400
 
 // Imagery: the NASA source once connected, else a custom image, else the generated texture
 const CUSTOM_IMAGE = '/resources/mars.jpg'
-let generatedImage: string | null = null
-const generatedTexture = () => (generatedImage ??= getMarsTextures().color.toDataURL('image/jpeg', 0.9))
+type ImageKind = 'nasa' | 'custom' | 'generated'
+type MapImage = { source: HTMLImageElement | HTMLCanvasElement; width: number; height: number; kind: ImageKind }
 
-function useMapImage() {
-  const [src, setSrc] = useState(() => (isConnected(nasaData.surfaceImagery) ? nasaData.surfaceImagery.url : generatedTexture()))
+function loadImage(url: string, kind: ImageKind, onLoad: (img: MapImage) => void) {
+  const img = new Image()
+  img.crossOrigin = 'anonymous'
+  img.onload = () => onLoad({ source: img, width: img.naturalWidth, height: img.naturalHeight, kind })
+  img.src = url
+  return () => { img.onload = null }
+}
+
+function useMapImage(): MapImage | null {
+  const [image, setImage] = useState<MapImage | null>(() => {
+    if (isConnected(nasaData.surfaceImagery)) return null // shown once it loads
+    const canvas = getMarsTextures().color
+    return { source: canvas, width: canvas.width, height: canvas.height, kind: 'generated' }
+  })
   useEffect(() => {
-    if (isConnected(nasaData.surfaceImagery)) return
-    const img = new Image()
-    img.onload = () => setSrc(CUSTOM_IMAGE)
-    img.src = CUSTOM_IMAGE
+    if (isConnected(nasaData.surfaceImagery)) return loadImage(nasaData.surfaceImagery.url, 'nasa', setImage)
+    return loadImage(CUSTOM_IMAGE, 'custom', setImage)
   }, [])
-  return src
+  return image
 }
 
 // Fit all points in view, or show the whole planet when there are none
@@ -68,6 +78,7 @@ function niceKm(km: number) {
 
 export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map of Mars' }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 800, h: 450 })
   const [view, setView] = useState(() => initialView(points))
   const [hover, setHover] = useState<LatLon | null>(null)
@@ -85,6 +96,39 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Paint only the visible part of the imagery, at screen resolution. Drawing the whole image
+  // stretched (as an SVG <image>) makes the browser paint it thousands of times larger at deep zoom.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const pw = Math.round(size.w * dpr)
+    const ph = Math.round(size.h * dpr)
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw
+      canvas.height = ph
+    }
+    const ctx = canvas.getContext('2d')!
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, pw, ph)
+    if (!image) return
+    // Visible map area, clipped to the planet (0..360 x 0..180)
+    const x0 = Math.max(0, left)
+    const x1 = Math.min(360, left + view.w)
+    const y0 = Math.max(0, top)
+    const y1 = Math.min(180, top + h)
+    if (x1 <= x0 || y1 <= y0) return
+    const pxPerUnit = pw / view.w
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(
+      image.source,
+      (x0 / 360) * image.width, (y0 / 180) * image.height, ((x1 - x0) / 360) * image.width, ((y1 - y0) / 180) * image.height,
+      (x0 - left) * pxPerUnit, (y0 - top) * pxPerUnit, (x1 - x0) * pxPerUnit, (y1 - y0) * pxPerUnit,
+    )
+  }, [image, left, top, view.w, h, size])
 
   // Move the view when a new `focus` arrives (adjusting state during render, not in an effect)
   const [appliedFocus, setAppliedFocus] = useState(focus)
@@ -198,9 +242,8 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
         role="application"
         aria-label={`${label}. Drag or use arrow keys to pan, scroll or plus and minus to zoom${onPick ? ', click to place a point' : ''}.`}
       >
+        <canvas ref={canvasRef} className="map2d-image" aria-hidden="true" />
         <svg viewBox={`${left} ${top} ${view.w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
-          <rect x="-1000" y="-1000" width="3000" height="3000" fill="#000" />
-          <image href={image} x="0" y="0" width="360" height="180" preserveAspectRatio="none" />
           <g className="map2d-grid">
             {grid.xs.map((x) => <line key={`x${x}`} x1={x} x2={x} y1={0} y2={180} />)}
             {grid.ys.map((y) => <line key={`y${y}`} x1={0} x2={360} y1={y} y2={y} />)}
@@ -240,7 +283,7 @@ export function MarsMap2D({ points, closed = false, onPick, focus, label = 'Map 
         Imagery:{' '}
         {isConnected(nasaData.surfaceImagery)
           ? nasaData.surfaceImagery.source
-          : image === CUSTOM_IMAGE
+          : image?.kind === 'custom'
             ? 'custom image (public/resources/mars.jpg)'
             : 'placeholder (generated texture, not NASA data)'}
       </p>
