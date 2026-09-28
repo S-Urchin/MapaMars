@@ -1,7 +1,8 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { MarsGlobe, type GlobeLayers, type GlobeMarker } from '../components/MarsGlobe'
 import { formatHours, formatLat, formatLon, landingSites, localMeanSolarTime, marsClock } from '../data/mars'
 import { useNow } from '../hooks/useNow'
+import { clearWarpArrival, isWarpArrival } from '../lib/warp'
 
 const Globe = memo(MarsGlobe)
 
@@ -24,6 +25,9 @@ export function GlobePage() {
   const now = useNow()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [layers, setLayers] = useState<GlobeLayers>({ grid: true, sites: true, orbits: false, rotate: true })
+  const [arriving] = useState(isWarpArrival)
+
+  useEffect(clearWarpArrival, [])
 
   const { mtc } = marsClock(now)
   const site = landingSites.find((s) => s.id === selectedId)
@@ -35,7 +39,7 @@ export function GlobePage() {
   const toggleLayer = (key: keyof GlobeLayers) => setLayers((l) => ({ ...l, [key]: !l[key] }))
 
   return (
-    <main className="globe-page">
+    <main className={`globe-page${arriving ? ' is-arriving' : ''}`}>
       <aside className="site-list" aria-label="Landing sites">
         <h2>Landing sites</h2>
         <ul>
