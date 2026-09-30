@@ -57,23 +57,14 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .home.is-leaving .now { animation: fade-away 500ms ease-in both; }
 
 @keyframes text-recede {
-  0% { transform: none; opacity: 1; filter: none; }
+  0% { transform: none; opacity: 1; }
   15% { transform: scale(1.04); }
-  100% { transform: scale(0.08); opacity: 0; filter: blur(3px); }
+  100% { transform: scale(0.08); opacity: 0; }
 }
 @keyframes fade-away { to { opacity: 0; transform: translateY(24px); } }
 
 .hyperspace { position: fixed; inset: 0; z-index: 100; background: #000; animation: fade-in 400ms ease both; }
 .hyperspace canvas { display: block; width: 100%; height: 100%; }
-
-/* Arrival from the hyperspace jump: the globe pops in, then the interface fades in around it. */
-.globe-page.is-arriving .globe-host { animation: globe-pop 480ms cubic-bezier(0.18, 1.5, 0.4, 1) both; }
-.globe-page.is-arriving .globe-frame { animation: frame-in 1.8s ease 0.45s both; }
-.globe-page.is-arriving .site-list,
-.globe-page.is-arriving .site-detail,
-.globe-page.is-arriving .toggles,
-.globe-page.is-arriving .globe-hint,
-.app:has(.globe-page.is-arriving) .nav { animation: fade-in 1.8s ease 0.45s both; }
 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes frame-in { from { border-color: transparent; } }
@@ -109,38 +100,224 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 
 /* ---------- Globe page ---------- */
 
-.globe-page {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 280px;
-  align-content: start;
-  gap: 24px;
-  padding: 24px clamp(16px, 3vw, 32px);
+/* Mars fills the whole window and stays interactive; everything else floats over it */
+.globe-page { position: fixed; inset: 0; overflow: hidden; background: var(--black); }
+html:has(.globe-page) { overflow: hidden; }
+.globe-frame { position: absolute; inset: 0; }
+.globe-page .site-marker-label { opacity: 1; }
+
+/* The menu bar floats over the top edge. No frosted blur: blurring the live globe stalls the graphics card. */
+.app:has(.globe-page) .nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  backdrop-filter: none;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0));
+  border-bottom: 0;
+  transition: opacity 700ms ease, visibility 0s;
 }
 
-.site-list h2,
-.site-detail h2 { margin: 0 0 12px; font-weight: 500; }
-.site-list h2 { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray-2); }
-.site-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.site-list button {
-  width: 100%;
+/* Live time, top left under the brand */
+.live-clock {
+  position: absolute;
+  top: 64px;
+  left: clamp(16px, 4vw, 48px);
+  z-index: 25;
   display: flex;
-  justify-content: space-between;
-  padding: 9px 12px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  text-align: left;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: fade-in 700ms ease both;
+}
+.live-clock-badge { display: inline-flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff5a4f; animation: live-pulse 2s ease-out infinite; }
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 90, 79, 0.6); }
+  100% { box-shadow: 0 0 0 8px rgba(255, 90, 79, 0); }
+}
+
+/* Landing-site close-up: a way back, then where and when this is */
+.site-header {
+  position: absolute;
+  top: 132px;
+  left: clamp(16px, 4vw, 48px);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  animation: fade-in 600ms ease both;
+}
+.globe-page .site-header .terrain-caption { position: static; }
+.site-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 16px 0 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--black);
+  background: var(--white);
+  border: 0;
+  border-radius: 999px;
   cursor: pointer;
 }
-.site-list button:hover { border-color: var(--line); }
-.site-list button.is-selected { background: var(--white); color: var(--black); }
-.site-list button.is-selected .muted { color: rgba(0, 0, 0, 0.55); }
-.site-list .muted { font-family: var(--mono); font-size: 13px; }
+.site-back:hover { background: var(--gray-1); }
 
-.globe-stage { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.globe-frame { position: relative; height: calc(100vh - 150px); min-height: 420px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.globe-hint { position: absolute; left: 16px; bottom: 12px; margin: 0; font-size: 12px; color: var(--gray-2); pointer-events: none; }
+/* Live / Day / Night lighting for the close-up */
+.light-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(10, 10, 10, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+.light-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px 0 10px;
+  font-size: 13px;
+  color: var(--gray-1);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+.light-switch button:hover { color: var(--white); }
+.light-switch button.is-on { color: var(--black); background: var(--white); }
+
+/* Arrival from the hyperspace jump: the globe pops in on a wide shot of Mars and its moons, then glides in.
+   The menu bar and controls wait until it has landed. */
+.globe-page.is-arriving .globe-host.is-ready { animation: globe-pop 480ms cubic-bezier(0.18, 1.5, 0.4, 1) both; }
+.app:has(.globe-page.is-arriving:not(.is-landed)) .nav { opacity: 0; visibility: hidden; }
+
+.globe-hint {
+  position: absolute;
+  right: 24px;
+  bottom: 28px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--gray-2);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fade-in 700ms ease both;
+}
+/* Credit for NASA's Mars model, under the hint */
+.globe-credit { display: block; margin-top: 4px; text-align: right; font-size: 11px; opacity: 0.75; }
+.globe-page .globe-hint { bottom: 20px; }
+
+/* Tools: a round button at the bottom left that slides a row of tool buttons out to its right */
+.tool-dock {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fade-in 700ms ease both;
+}
+.tool-dock-toggle,
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--white);
+  background: rgba(10, 10, 10, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.tool-dock-toggle { justify-content: center; width: 46px; height: 46px; padding: 0; border-radius: 50%; }
+.tool-dock-toggle:hover,
+.tool:hover { border-color: rgba(255, 255, 255, 0.6); }
+.tool-dock.is-open .tool-dock-toggle { background: var(--white); color: var(--black); border-color: var(--white); }
+.tool-tray { display: flex; gap: 8px; }
+.tool {
+  height: 40px;
+  padding: 0 14px 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateX(-16px);
+  pointer-events: none;
+  /* Close in reverse order, open left to right */
+  transition: opacity 180ms ease, transform 220ms ease, background 150ms, color 150ms, border-color 150ms;
+}
+.tool-dock.is-open .tool {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: opacity 260ms ease calc(var(--i) * 35ms), transform 380ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--i) * 35ms), background 150ms, color 150ms, border-color 150ms;
+}
+.tool[aria-pressed='false'] { color: var(--gray-2); }
+.tool.is-on { color: var(--black); background: var(--white); border-color: var(--white); }
+
+/* Brief background for the clicked site or moon */
+.info-card {
+  position: absolute;
+  top: 84px;
+  right: 24px;
+  z-index: 25;
+  width: min(340px, calc(100vw - 48px));
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  padding: 22px 22px 20px;
+  background: rgba(8, 8, 8, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  animation: card-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes card-in { from { opacity: 0; transform: translateX(24px); } }
+.info-card h2 { margin: 2px 0 4px; font-size: 26px; font-weight: 500; }
+.info-card .muted { margin: 0; font-size: 13px; line-height: 1.5; }
+.info-card-kicker { margin: 0; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray-2); }
+.info-card-text { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--gray-1); font-size: 14px; line-height: 1.6; }
+.info-card-status { margin: 12px 0 0; font-family: var(--mono); font-size: 12px; color: var(--gray-2); }
+.info-card-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 16px 0 0; font-size: 13px; }
+.info-card-facts dt { color: var(--gray-2); }
+.info-card-facts dd { margin: 0; }
+.info-card-action { display: block; width: 100%; margin-top: 18px; text-align: center; border: 0; cursor: pointer; font: inherit; font-weight: 500; }
+.info-card-action:disabled { opacity: 0.6; cursor: default; }
+.info-card-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--gray-1);
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.info-card-close:hover { color: var(--white); background: rgba(255, 255, 255, 0.1); }
+
+@media (max-width: 720px) {
+  /* On phones the card sits above the tools instead of beside the globe */
+  .info-card { top: auto; bottom: 86px; right: 16px; left: 16px; width: auto; max-height: 45vh; }
+  @keyframes card-in { from { opacity: 0; transform: translateY(24px); } }
+  .tool-dock { left: 16px; bottom: 16px; max-width: calc(100vw - 32px); }
+  .tool-tray { overflow-x: auto; }
+  .globe-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .info-card, .tool, .tool-dock.is-open .tool, .live-dot { animation: none; transition: none; }
+}
+
 
 .toggles { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
 .toggles button {
@@ -155,7 +332,6 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .toggles button:hover { color: var(--white); }
 .toggles button.is-on { color: var(--black); background: var(--white); border-color: var(--white); }
 
-.site-detail h2 { font-size: 28px; margin-bottom: 2px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 20px 0 0; }
 .kv dt { color: var(--gray-2); font-size: 14px; }
 .kv dd { margin: 0; font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -181,7 +357,13 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 
 /* ---------- Landing site close-up ---------- */
 
-.terrain-host { animation: fade-in 600ms ease both; }
+/* The landing-site close-up is set up out of sight during the dive, fades in over the globe once ready,
+   and fades out again on the way back */
+.site-layer { position: absolute; inset: 0; z-index: 1; background: var(--black); opacity: 0; pointer-events: none; }
+.site-layer.is-visible { opacity: 1; pointer-events: auto; animation: fade-in 800ms ease both; }
+.site-layer.is-leaving { animation: site-out 800ms ease both; }
+@keyframes site-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .site-layer, .site-layer.is-leaving { animation-duration: 1ms; } }
 .terrain-caption {
   position: absolute;
   top: 14px;
@@ -197,36 +379,6 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 }
 .terrain-caption .muted { font-family: var(--mono); font-size: 12px; letter-spacing: 0; text-transform: none; }
 
-/* Cloud bank the camera flies into on the globe, then breaks through above the landing site. */
-.cloud-veil {
-  position: absolute;
-  inset: -15%;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    radial-gradient(38% 28% at 30% 38%, rgba(255, 241, 230, 0.95), transparent 70%),
-    radial-gradient(34% 26% at 70% 56%, rgba(255, 236, 222, 0.92), transparent 70%),
-    radial-gradient(44% 32% at 48% 76%, rgba(246, 222, 204, 0.9), transparent 70%),
-    radial-gradient(30% 24% at 18% 78%, rgba(255, 244, 236, 0.85), transparent 70%),
-    radial-gradient(36% 28% at 82% 22%, rgba(250, 232, 218, 0.9), transparent 70%),
-    radial-gradient(60% 50% at 50% 50%, rgba(232, 206, 188, 0.85), transparent 85%);
-  filter: blur(22px);
-}
-.cloud-veil.is-in { animation: veil-in 1.4s ease-in both; }
-.cloud-veil.is-out { animation: veil-out 2.2s ease-out both; }
-@keyframes veil-in {
-  from { opacity: 0; transform: scale(0.55) rotate(-8deg); }
-  to { opacity: 1; transform: scale(1.15) rotate(0deg); }
-}
-/* Holds fully opaque for a moment, so the close-up is built and moving before it shows through. */
-@keyframes veil-out {
-  0% { opacity: 1; transform: scale(1.15); }
-  25% { opacity: 1; transform: scale(1.3); }
-  100% { opacity: 0; transform: scale(2.6) rotate(6deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .cloud-veil { display: none; }
-}
 
 .poi-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .poi { position: absolute; top: 0; left: 0; width: 0; height: 0; transition: opacity 0.3s; will-change: transform; }
@@ -636,11 +788,15 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 /* ---------- Globe canvas & markers ---------- */
 
 .globe-host { position: absolute; inset: 0; overflow: hidden; }
+/* Hidden until its shaders are compiled, then faded in (or popped in, after the hyperspace jump) */
+/* Only the globe waits for its shaders; the landing-site close-up (also a .globe-host) shows at once */
+.globe-host:not(.terrain-host):not(.is-ready) { opacity: 0; }
+.globe-host.is-ready { animation: fade-in 350ms ease both; }
 .globe-host canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .globe-host canvas:active { cursor: grabbing; }
 .globe-host.is-preview canvas { cursor: default; pointer-events: none; }
 .globe-markers { position: absolute; inset: 0; pointer-events: none; }
-.globe-readout { position: absolute; right: 16px; bottom: 12px; font-family: var(--mono); font-size: 12px; white-space: pre; pointer-events: none; }
+.globe-readout { position: absolute; right: 24px; bottom: 66px; font-family: var(--mono); font-size: 12px; white-space: pre; pointer-events: none; }
 
 .site-marker {
   position: absolute;
@@ -676,6 +832,34 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .site-marker.is-selected .site-marker-label { background: var(--white); color: var(--black); }
 .site-marker.is-selected .site-marker-dot { background: var(--white); animation: ping 1.6s ease-out infinite; }
 
+/* Moon labels sit just above the moon; shadow labels just below their spot */
+.moon-marker,
+.shadow-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+  border-radius: 4px;
+  transition: opacity 0.2s;
+  will-change: transform;
+}
+.moon-marker {
+  margin: -30px 0 0 0;
+  translate: -50% 0;
+  color: var(--moon-color);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--moon-color);
+  cursor: pointer;
+}
+.moon-marker:hover,
+.moon-marker.is-selected { color: var(--black); background: var(--moon-color); }
+.shadow-marker { margin: 14px 0 0 0; translate: -50% 0; color: var(--moon-color); background: rgba(0, 0, 0, 0.7); pointer-events: none; }
+.is-phobos { --moon-color: #ffb489; }
+.is-deimos { --moon-color: #9fd3ff; }
+
+
 @keyframes ping {
   0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
   100% { box-shadow: 0 0 0 12px rgba(255, 255, 255, 0); }
@@ -688,9 +872,6 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
   .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .feature:nth-child(3) { padding-left: 0; border-left: 0; }
   .feature:nth-child(n + 3) { border-top: 1px solid var(--line); }
-  .globe-page { grid-template-columns: 200px minmax(0, 1fr); }
-  .globe-stage { grid-column: 1 / -1; order: -1; }
-  .globe-frame { height: 70vh; }
   .missions-page { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'form' 'globe'; }
   .mission-view { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'detail' 'globe'; }
   .map2d-surface { height: min(60vh, 100vw); }
@@ -709,11 +890,6 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
   .features { grid-template-columns: minmax(0, 1fr); }
   .feature, .feature + .feature { padding: 24px 0; border-left: 0; }
   .feature + .feature { border-top: 1px solid var(--line); }
-  .globe-page { grid-template-columns: minmax(0, 1fr); }
-  .globe-frame { height: 90vw; min-height: 340px; }
-  .site-list ul { flex-direction: row; flex-wrap: wrap; gap: 6px; }
-  .site-list li { flex: 1 1 140px; }
-  .site-list button { border-color: var(--line); }
 }
 
 /* Phases (optional stops between start and end) */
@@ -782,3 +958,4 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
   border-top: 1px solid var(--line);
 }
 .form-footer-summary { margin: 0; font-size: 14px; }
+

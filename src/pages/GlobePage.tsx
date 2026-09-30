@@ -1,15 +1,34 @@
 import { memo, useEffect, useState } from 'react'
 import { MarsGlobe, type GlobeLayers, type GlobeMarker } from '../components/MarsGlobe'
+import { MARS_MODEL_CREDIT } from '../components/marsModel'
 import { SiteTerrain } from '../components/SiteTerrain'
-import { formatHours, formatLat, formatLon, landingSites, localMeanSolarTime, marsClock } from '../data/mars'
+import { prepareSiteScene } from '../components/siteSceneBuild'
+import { formatHours, formatLat, formatLon, formatUtc, landingSites, localMeanSolarTime, marsClock } from '../data/mars'
+import { sunLocalDirection, type MoonId } from '../data/marsSky'
 import { siteScenes } from '../data/siteScenes'
 import { useNow } from '../hooks/useNow'
 import { clearWarpArrival, isWarpArrival } from '../lib/warp'
+import { Icon, MoonCard, SiteCard, ToolDock, type Tool } from './globe/GlobeOverlay'
 
 const Globe = memo(MarsGlobe)
 
-// Matches the cloud-veil fade-in in App.css.
-const DIVE_MS = 1400
+// The globe's dive toward a landing site, then the cross-fade to its close-up (see .site-layer in App.css)
+const DIVE_MS = 1300
+const FADE_MS = 800
+
+// Lighting choices for a landing-site close-up: the real Sun right now, or a fixed day or night sky
+type SiteLight = 'live' | 'day' | 'night'
+const SITE_LIGHTS: { id: SiteLight; label: string; icon: 'live' | 'sun' | 'moon'; title: string }[] = [
+  { id: 'live', label: 'Live', icon: 'live', title: 'Where the Sun really is at the site right now' },
+  { id: 'day', label: 'Day', icon: 'sun', title: 'Mid-morning sunlight, with long shadows' },
+  { id: 'night', label: 'Night', icon: 'moon', title: 'After dark' },
+]
+const unit = (east: number, north: number, up: number) => {
+  const l = Math.hypot(east, north, up)
+  return { east: east / l, north: north / l, up: up / l }
+}
+const DAY_SUN = unit(0.72, -0.35, 0.6) // east-southeast, about 37° up
+const NIGHT_SUN = unit(-0.6, 0.3, -0.74) // well below the horizon
 
 const siteMarkers: GlobeMarker[] = landingSites.map((s) => ({
   id: s.id,
@@ -19,145 +38,243 @@ const siteMarkers: GlobeMarker[] = landingSites.map((s) => ({
   variant: s.status === 'ACTIVE' ? 'filled' : undefined,
 }))
 
-const LAYER_KEYS: { key: keyof GlobeLayers; label: string }[] = [
-  { key: 'grid', label: 'Grid' },
-  { key: 'sites', label: 'Sites' },
-  { key: 'orbits', label: 'Phobos' },
-  { key: 'rotate', label: 'Rotate' },
-]
-
 export function GlobePage() {
   const now = useNow()
+  const nowMs = now.getTime()
+  const { mtc } = marsClock(now)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [layers, setLayers] = useState<GlobeLayers>({ grid: true, sites: true, orbits: false, rotate: true })
+  const [moonId, setMoonId] = useState<MoonId | null>(null)
+  const [layers, setLayers] = useState<GlobeLayers>({ labels: true, orbits: true, grid: true, shadows: true })
+  const [resetKey, setResetKey] = useState(0)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [arriving] = useState(isWarpArrival)
-  // 'site' swaps the globe for a close-up 3D scene of the selected landing site
+  // After the hyperspace jump, the controls wait until the camera has glided in to Mars
+  const [landed, setLanded] = useState(!arriving)
+  // 'site' shows a close-up 3D scene of the selected landing site over the (paused) globe
   const [view, setView] = useState<'globe' | 'site'>('globe')
   const [poiId, setPoiId] = useState<string | null>(null)
   const [siteLayers, setSiteLayers] = useState({ labels: true, rotate: false })
-  // True while the globe dives toward the site and clouds close in, before the close-up takes over
+  const [siteLight, setSiteLight] = useState<SiteLight>('live')
+  // Into a landing-site close-up and back out again:
+  // 1. preparing: the site's terrain is generated while nothing is moving (a brief, unseen pause)
+  // 2. diving: the globe camera dives toward the site, while the close-up is set up out of sight (siteMounted)
+  // 3. view 'site': once the dive is done and the close-up is ready (siteReady), it fades in over the globe,
+  //    and after that (siteShown) the globe pauses underneath
+  // 4. back: the close-up fades out (leavingSite) while the globe zooms back out from where the dive stopped
+  const [preparing, setPreparing] = useState(false)
   const [diving, setDiving] = useState(false)
+  const [siteMounted, setSiteMounted] = useState(false)
+  const [siteReady, setSiteReady] = useState(false)
+  const [siteShown, setSiteShown] = useState(false)
+  const [leavingSite, setLeavingSite] = useState(false)
+  const [zoomOut, setZoomOut] = useState<{ lat: number; lon: number } | null>(null)
+  const siteVisible = view === 'site' && siteReady
+
+  useEffect(() => {
+    if (!preparing) return
+    const scene = selectedId ? siteScenes[selectedId] : undefined
+    // Wait two frames so "Descending…" is on screen before the pause
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => {
+        if (scene) prepareSiteScene(scene)
+        setPreparing(false)
+        setSiteMounted(true)
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setView('site')
+        else setDiving(true)
+      })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [preparing, selectedId])
 
   useEffect(() => {
     if (!diving) return
-    const id = setTimeout(() => {
-      setDiving(false)
-      setView('site')
-    }, DIVE_MS)
+    const id = setTimeout(() => setView('site'), DIVE_MS)
     return () => clearTimeout(id)
   }, [diving])
 
+  useEffect(() => {
+    if (!siteVisible || siteShown) return
+    const id = setTimeout(() => {
+      setSiteShown(true)
+      setDiving(false)
+    }, FADE_MS)
+    return () => clearTimeout(id)
+  }, [siteVisible, siteShown])
+
+  useEffect(() => {
+    if (!leavingSite) return
+    const id = setTimeout(() => {
+      setLeavingSite(false)
+      setSiteMounted(false)
+      setSiteReady(false)
+    }, FADE_MS)
+    return () => clearTimeout(id)
+  }, [leavingSite])
+
   useEffect(clearWarpArrival, [])
 
-  const { mtc } = marsClock(now)
+  // Safety net: bring in the controls anyway if the globe never gets to land (for example, no WebGL)
+  useEffect(() => {
+    if (landed) return
+    const id = setTimeout(() => setLanded(true), 8000)
+    return () => clearTimeout(id)
+  }, [landed])
+
   const site = landingSites.find((s) => s.id === selectedId)
   const scene = site ? siteScenes[site.id] : undefined
   const inSite = view === 'site' && !!scene
+  // Where the Sun is over the site right now, so the close-up's shadows fall as they really would
+  const siteSun = site ? sunLocalDirection(site.lat, site.lon, nowMs) : null
+  const siteSunElevation = siteSun ? (Math.asin(siteSun.up) * 180) / Math.PI : 0
+  const shownSun = siteLight === 'day' ? DAY_SUN : siteLight === 'night' ? NIGHT_SUN : siteSun
 
-  const select = (id: string) => {
-    setSelectedId(id)
+  // Drop any close-up at once (for jumping straight to something else)
+  const resetSite = () => {
     setView('globe')
-    setDiving(false)
     setPoiId(null)
-    setLayers((l) => (l.rotate ? { ...l, rotate: false } : l))
+    setPreparing(false)
+    setDiving(false)
+    setSiteMounted(false)
+    setSiteReady(false)
+    setSiteShown(false)
+  }
+  const select = (id: string) => {
+    resetSite()
+    setSelectedId(id)
+    setMoonId(null)
+  }
+  const selectMoon = (id: MoonId) => {
+    resetSite()
+    setMoonId(id)
+    setSelectedId(null)
+  }
+  const closeCard = () => {
+    resetSite()
+    setSelectedId(null)
+    setMoonId(null)
   }
   const toggleLayer = (key: keyof GlobeLayers) => setLayers((l) => ({ ...l, [key]: !l[key] }))
   const toggleSiteLayer = (key: 'labels' | 'rotate') => setSiteLayers((l) => ({ ...l, [key]: !l[key] }))
   const togglePoi = (id: string) => setPoiId((current) => (current === id ? null : id))
   const openSite = () => {
     setPoiId(null)
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setView('site')
-    else setDiving(true)
+    setSiteShown(false)
+    setPreparing(true)
   }
   const closeSite = () => {
     setPoiId(null)
     setView('globe')
+    setSiteShown(false)
+    setDiving(false)
+    setLeavingSite(true)
+    // A new object each time, so the globe flies out even when returning from the same site again
+    if (site) setZoomOut({ lat: site.lat, lon: site.lon })
   }
 
+  // Esc closes whatever is open: the close-up or info card first, then the tools.
+  // Re-registered every render so it always acts on the current selection.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (selectedId || moonId) {
+        if (inSite) closeSite()
+        else closeCard()
+      } else setToolsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const globeTools: Tool[] = [
+    { id: 'labels', label: 'Labels', icon: 'labels', on: layers.labels, onClick: () => toggleLayer('labels') },
+    { id: 'orbits', label: 'Orbits', icon: 'orbits', on: layers.orbits, onClick: () => toggleLayer('orbits') },
+    { id: 'grid', label: 'Grid', icon: 'grid', on: layers.grid, onClick: () => toggleLayer('grid') },
+    { id: 'shadows', label: 'Moon shadows', icon: 'shadows', on: layers.shadows, onClick: () => toggleLayer('shadows') },
+    { id: 'reset', label: 'Reset view', icon: 'reset', onClick: () => { closeCard(); setResetKey((k) => k + 1) } },
+  ]
+  const siteTools: Tool[] = [
+    { id: 'back', label: 'Back to globe', icon: 'back', onClick: closeSite },
+    { id: 'labels', label: 'Labels', icon: 'labels', on: siteLayers.labels, onClick: () => toggleSiteLayer('labels') },
+    { id: 'rotate', label: 'Rotate', icon: 'rotate', on: siteLayers.rotate, onClick: () => toggleSiteLayer('rotate') },
+  ]
+
   return (
-    <main className={`globe-page${arriving ? ' is-arriving' : ''}`}>
-      <aside className="site-list" aria-label="Landing sites">
-        <h2>Landing sites</h2>
-        <ul>
-          {landingSites.map((s) => (
-            <li key={s.id}>
-              <button type="button" className={s.id === selectedId ? 'is-selected' : ''} onClick={() => select(s.id)} aria-pressed={s.id === selectedId}>
-                <span>{s.mission}</span>
-                <span className="muted">{s.landed}</span>
+    <main className={`globe-page${arriving ? ' is-arriving' : ''}${landed ? ' is-landed' : ''}`}>
+      <div className="globe-frame">
+        {/* The globe stays loaded under the close-up (paused), ready to zoom back out */}
+        <Globe
+          sites={siteMarkers}
+          selectedId={selectedId}
+          layers={layers}
+          onSelect={select}
+          onPick={closeCard}
+          dive={diving}
+          focus={zoomOut}
+          paused={siteShown}
+          selectedMoon={moonId}
+          onSelectMoon={selectMoon}
+          intro={arriving}
+          onIntroDone={() => setLanded(true)}
+          resetKey={resetKey}
+        />
+        {siteMounted && site && scene && (
+          <div className={`site-layer${leavingSite ? ' is-leaving' : siteVisible ? ' is-visible' : ''}`} aria-hidden={!siteVisible}>
+            <SiteTerrain
+              site={scene}
+              selectedPoi={poiId}
+              labels={siteLayers.labels}
+              rotate={siteLayers.rotate}
+              onSelectPoi={togglePoi}
+              sun={shownSun}
+              active={view === 'site'}
+              onReady={() => setSiteReady(true)}
+            />
+            {siteVisible && <div className="site-header">
+              <button type="button" className="site-back" onClick={closeSite}>
+                <Icon name="back" /> Back to globe
               </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
-      <section className="globe-stage">
-        <div className="globe-frame">
-          {inSite && site && scene ? (
-            <>
-              <SiteTerrain site={scene} selectedPoi={poiId} labels={siteLayers.labels} rotate={siteLayers.rotate} onSelectPoi={togglePoi} />
-              <div className="cloud-veil is-out" aria-hidden="true" />
               <p className="terrain-caption">
-                <span>{site.location}</span>
-                <span className="muted">{formatLat(site.lat)} {formatLon(site.lon)}</span>
+                <span>{site.mission} · {site.location}</span>
+                <span className="muted">
+                  {formatLat(site.lat)} {formatLon(site.lon)} · local time {formatHours(localMeanSolarTime(mtc, site.lon)).slice(0, 5)} ·{' '}
+                  {siteLight === 'day' ? 'showing daytime' : siteLight === 'night' ? 'showing night-time' : siteSunElevation >= 0
+                    ? `Sun ${Math.round(siteSunElevation)}° up`
+                    : `night, Sun ${Math.round(-siteSunElevation)}° below the horizon`}
+                </span>
               </p>
-              <p className="globe-hint">Drag to orbit · Right-drag to pan · Scroll to zoom</p>
-            </>
-          ) : (
-            <>
-              <Globe sites={siteMarkers} selectedId={selectedId} layers={layers} onSelect={select} dive={diving} />
-              {diving && <div className="cloud-veil is-in" aria-hidden="true" />}
-              <p className="globe-hint">Drag to rotate · Scroll to zoom</p>
-            </>
-          )}
-        </div>
-        {inSite ? (
-          <div className="toggles" role="group" aria-label="Landing site view">
-            <button type="button" onClick={closeSite}>← Globe</button>
-            <button type="button" className={siteLayers.labels ? 'is-on' : ''} aria-pressed={siteLayers.labels} onClick={() => toggleSiteLayer('labels')}>Labels</button>
-            <button type="button" className={siteLayers.rotate ? 'is-on' : ''} aria-pressed={siteLayers.rotate} onClick={() => toggleSiteLayer('rotate')}>Rotate</button>
-          </div>
-        ) : (
-          <div className="toggles" role="group" aria-label="Globe layers">
-            {LAYER_KEYS.map(({ key, label }) => (
-              <button key={key} type="button" className={layers[key] ? 'is-on' : ''} aria-pressed={layers[key]} onClick={() => toggleLayer(key)}>{label}</button>
-            ))}
+              <div className="light-switch" role="group" aria-label="Lighting">
+                {SITE_LIGHTS.map((l) => (
+                  <button key={l.id} type="button" className={siteLight === l.id ? 'is-on' : ''} aria-pressed={siteLight === l.id} title={l.title} onClick={() => setSiteLight(l.id)}>
+                    <Icon name={l.icon} /> {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>}
           </div>
         )}
-      </section>
+      </div>
 
-      <aside className="site-detail" aria-live="polite">
-        {site ? (
-          <>
-            <h2>{site.mission}</h2>
-            <p className="muted">{site.location}</p>
-            <dl className="kv">
-              <dt>Latitude</dt><dd>{formatLat(site.lat)}</dd>
-              <dt>Longitude</dt><dd>{formatLon(site.lon)}</dd>
-              <dt>Landed</dt><dd>{site.landed}</dd>
-              <dt>Local time</dt><dd>{formatHours(localMeanSolarTime(mtc, site.lon))}</dd>
-              <dt>Status</dt><dd>{site.status === 'ACTIVE' ? 'Active' : site.status === 'RETIRED' ? 'Retired' : 'Mission ended'}</dd>
-            </dl>
-            <p className="site-note">{site.note}</p>
-            {scene && (inSite ? (
-              <>
-                <button type="button" className="button-outline site-zoom" onClick={closeSite}>← Back to globe</button>
-                <h3 className="poi-heading">Points of interest</h3>
-                <ul className="poi-list">
-                  {scene.pois.map((p) => (
-                    <li key={p.id}>
-                      <button type="button" className={p.id === poiId ? 'is-selected' : ''} aria-pressed={p.id === poiId} onClick={() => togglePoi(p.id)}>{p.title}</button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <button type="button" className="button site-zoom" onClick={openSite} disabled={diving}>{diving ? 'Descending…' : 'Zoom to landing site'}</button>
-            ))}
-          </>
-        ) : (
-          <p className="muted empty">Select a landing site from the list or click a marker on the globe.</p>
-        )}
-      </aside>
+      {landed && (
+        <>
+          <p className="live-clock">
+            <span className="live-clock-badge"><span className="live-dot" aria-hidden="true" />Live</span>
+            <span>{formatUtc(nowMs)}</span>
+            <span className="muted">Mars {formatHours(mtc).slice(0, 5)} MTC</span>
+          </p>
+          <ToolDock open={toolsOpen} onToggle={() => setToolsOpen((o) => !o)} tools={inSite ? siteTools : globeTools} />
+          <p className="globe-hint">
+            {inSite ? 'Drag to orbit · Right-drag to pan · Scroll to zoom' : 'Drag to rotate · Scroll to zoom · Click a site or moon'}
+            {!inSite && <span className="globe-credit">{MARS_MODEL_CREDIT}</span>}
+          </p>
+        </>
+      )}
+
+      {/* Keyed so each new selection slides its card in afresh; the landing-site close-up has none */}
+      {site && !inSite ? (
+        <SiteCard key={site.id} site={site} canExplore={!!scene} diving={preparing || diving} onExplore={openSite} onClose={closeCard} />
+      ) : moonId ? (
+        <MoonCard key={moonId} id={moonId} onClose={closeCard} />
+      ) : null}
     </main>
   )
 }
