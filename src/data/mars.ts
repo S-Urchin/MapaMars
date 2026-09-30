@@ -97,3 +97,7 @@ export function marsDistanceKm(a: { lat: number; lon: number }, b: { lat: number
 export function formatDistance(km: number) {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(km < 10 ? 2 : 1)} km`
 }
+
+export function formatUtc(ms: number) {
+  return new Date(ms).toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
+}

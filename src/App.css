@@ -57,23 +57,61 @@ button:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
 .home.is-leaving .now { animation: fade-away 500ms ease-in both; }
 
 @keyframes text-recede {
-  0% { transform: none; opacity: 1; filter: none; }
+  0% { transform: none; opacity: 1; }
   15% { transform: scale(1.04); }
-  100% { transform: scale(0.08); opacity: 0; filter: blur(3px); }
+  100% { transform: scale(0.08); opacity: 0; }
 }
 @keyframes fade-away { to { opacity: 0; transform: translateY(24px); } }
 
 .hyperspace { position: fixed; inset: 0; z-index: 100; background: #000; animation: fade-in 400ms ease both; }
 .hyperspace canvas { display: block; width: 100%; height: 100%; }
 
-/* Arrival from the hyperspace jump: the globe pops in, then the interface fades in around it. */
-.globe-page.is-arriving .globe-host { animation: globe-pop 480ms cubic-bezier(0.18, 1.5, 0.4, 1) both; }
-.globe-page.is-arriving .globe-frame { animation: frame-in 1.8s ease 0.45s both; }
-.globe-page.is-arriving .site-list,
-.globe-page.is-arriving .site-detail,
-.globe-page.is-arriving .toggles,
-.globe-page.is-arriving .globe-hint,
-.app:has(.globe-page.is-arriving) .nav { animation: fade-in 1.8s ease 0.45s both; }
+/* Arrival from the hyperspace jump: the globe pops in on a wide shot of Mars and its moons, then glides in. */
+.globe-page.is-arriving .globe-host.is-ready { animation: globe-pop 480ms cubic-bezier(0.18, 1.5, 0.4, 1) both; }
+
+/* Full screen (the default): Mars alone, borderless, filling the window; the interface is hidden until
+   "Show interface". Switching grows or shrinks the globe between the window and its frame (GlobePage). */
+.globe-page :is(.site-list, .site-detail, .toggles, .globe-hint, .globe-clock, .globe-markers, .globe-readout),
+.app:has(.globe-page) .nav { transition: opacity 500ms ease 80ms, visibility 0s; }
+/* The big panels hide by transparency alone (GlobePage marks them inert) so they stay drawn: bringing
+   back something hidden with visibility makes the browser draw all its text first, freezing the screen. */
+.globe-page :is(.site-list, .site-detail, .toggles) { will-change: opacity; }
+.globe-page.is-immersive :is(.site-list, .site-detail, .toggles) { opacity: 0; transition: opacity 350ms ease; }
+.globe-page.is-immersive :is(.globe-hint, .globe-clock, .globe-markers, .globe-readout),
+.app:has(.globe-page.is-immersive) .nav { opacity: 0; visibility: hidden; transition: opacity 350ms ease, visibility 0s 350ms; }
+.gui-toggle.is-hide { animation: fade-in 500ms ease 80ms both; }
+.globe-frame { transition: border-color 500ms ease 80ms; }
+.globe-page.is-immersive .globe-frame { border-color: transparent; transition-delay: 0s; }
+.globe-page.is-immersive .globe-host:not(.terrain-host) { position: fixed; inset: 0; z-index: 20; }
+html:has(.globe-page.is-immersive) { overflow: hidden; }
+/* Keep the scrollbar's space reserved, so it coming and going doesn't shift the layout */
+html:has(.globe-page) { scrollbar-gutter: stable; }
+/* No frosted blur over the live globe: blurring a picture that changes every frame stalls the graphics
+   card as the menu bar fades back in. It is nearly opaque anyway. */
+.app:has(.globe-page) .nav { backdrop-filter: none; background: rgba(0, 0, 0, 0.92); }
+
+.gui-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--white);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.gui-toggle:hover { background: var(--white); color: var(--black); border-color: var(--white); }
+.gui-toggle.is-show {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 30;
+  translate: -50% 0;
+  animation: fade-in 700ms ease 150ms both;
+}
+.gui-toggle.is-hide { position: absolute; top: 12px; right: 12px; z-index: 2; padding: 6px 14px; font-size: 12px; }
 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes frame-in { from { border-color: transparent; } }
@@ -636,6 +674,9 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 /* ---------- Globe canvas & markers ---------- */
 
 .globe-host { position: absolute; inset: 0; overflow: hidden; }
+/* Hidden until its shaders are compiled, then faded in (or popped in, after the hyperspace jump) */
+.globe-host:not(.is-ready) { opacity: 0; }
+.globe-host.is-ready { animation: fade-in 350ms ease both; }
 .globe-host canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .globe-host canvas:active { cursor: grabbing; }
 .globe-host.is-preview canvas { cursor: default; pointer-events: none; }
@@ -675,6 +716,43 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .site-marker.is-selected .site-marker-label { opacity: 1; }
 .site-marker.is-selected .site-marker-label { background: var(--white); color: var(--black); }
 .site-marker.is-selected .site-marker-dot { background: var(--white); animation: ping 1.6s ease-out infinite; }
+
+/* Moon labels sit just above the moon; shadow labels just below their spot */
+.moon-marker,
+.shadow-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+  border-radius: 4px;
+  transition: opacity 0.2s;
+  will-change: transform;
+}
+.moon-marker {
+  margin: -30px 0 0 0;
+  translate: -50% 0;
+  color: var(--moon-color);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--moon-color);
+  cursor: pointer;
+}
+.moon-marker:hover,
+.moon-marker.is-selected { color: var(--black); background: var(--moon-color); }
+.shadow-marker { margin: 14px 0 0 0; translate: -50% 0; color: var(--moon-color); background: rgba(0, 0, 0, 0.7); pointer-events: none; }
+.is-phobos { --moon-color: #ffb489; }
+.is-deimos { --moon-color: #9fd3ff; }
+
+.site-list .site-list-heading { margin-top: 24px; }
+.globe-clock { font-size: 12px; }
+.sky-season { margin: 10px 0 0; font-size: 14px; color: var(--gray-1); }
+.sky-text { margin: 0 0 6px; font-size: 14px; line-height: 1.55; color: var(--gray-1); }
+.sky-text strong { font-weight: 500; color: var(--white); }
+.sky-hint { margin: 16px 0 0; font-size: 12px; line-height: 1.5; }
+.sky-toggles { justify-content: flex-start; margin-top: 20px; }
+.transit-row { margin-bottom: 14px; }
+.transit-detail { margin: 0; font-family: var(--mono); font-size: 12px; }
 
 @keyframes ping {
   0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
@@ -782,3 +860,8 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
   border-top: 1px solid var(--line);
 }
 .form-footer-summary { margin: 0; font-size: 14px; }
+
+/* Side panel content eases in when the selection changes */
+.panel-fade { animation: panel-in 450ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes panel-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .panel-fade { animation: none; } }

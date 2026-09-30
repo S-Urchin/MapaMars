@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type MouseEvent } from 'react'
 import { Hyperspace } from '../components/Hyperspace'
 import { getMarsTextures } from '../components/marsTexture'
+import { getMoonGeometry } from '../components/moonModel'
 import { AU_LIGHT_MIN, earthMarsDistanceAU, formatHours, landingSites, marsClock } from '../data/mars'
 import { useNow } from '../hooks/useNow'
 import { markWarpArrival } from '../lib/warp'
@@ -39,10 +40,26 @@ export function HomePage() {
     return () => clearTimeout(id)
   }, [phase])
 
-  // Build the globe texture ahead of time so the globe can appear the instant the jump ends.
+  // Build the globe texture and moon shapes ahead of time so the globe can appear the instant the jump
+  // ends. One piece per idle moment, so no single task holds up a click.
   useEffect(() => {
-    const id = setTimeout(getMarsTextures, 300)
-    return () => clearTimeout(id)
+    const jobs = [getMarsTextures, () => getMoonGeometry('phobos'), () => getMoonGeometry('deimos')]
+    // Safari has no requestIdleCallback; a short timeout does the same job there
+    const hasIdle = 'requestIdleCallback' in window
+    const idle = (cb: () => void) => (hasIdle ? window.requestIdleCallback(cb, { timeout: 1000 }) : window.setTimeout(cb, 50))
+    const cancelIdle = (id: number) => (hasIdle ? window.cancelIdleCallback(id) : window.clearTimeout(id))
+    let idleId = 0
+    const next = () => {
+      const job = jobs.shift()
+      if (!job) return
+      job()
+      idleId = idle(next)
+    }
+    const startId = window.setTimeout(() => { idleId = idle(next) }, 300)
+    return () => {
+      clearTimeout(startId)
+      cancelIdle(idleId)
+    }
   }, [])
 
   const openGlobe = (e: MouseEvent<HTMLAnchorElement>) => {
