@@ -195,6 +195,29 @@ export function moonShadow(id: MoonId, d: number, sunDir: Vec3, sunAu: number, p
   return { center, radiusKm: r + sunSpread, coverage: Math.min(1, (r / sunSpread) ** 2) }
 }
 
+/**
+ * Share of the Sun's disk a moon can see past Mars: 1 in full sunlight, 0 in Mars's umbra, and in between
+ * in the penumbra, so an eclipse fades in and out instead of switching.
+ */
+export function sunVisibleFromMoon(pos: Vec3, sunDir: Vec3, sunAu: number) {
+  const dist = len(pos)
+  const marsRadius = Math.asin(Math.min(1, MARS_RADIUS_KM / dist)) / RAD
+  const sunRadius = sunAngularRadiusDeg(sunAu)
+  const sep = Math.acos(Math.max(-1, Math.min(1, dot(scale(pos, -1 / dist), sunDir)))) / RAD
+  return 1 - overlapArea(sunRadius, marsRadius, sep) / (Math.PI * sunRadius * sunRadius)
+}
+
+/** Direction of the Sun seen from a place on Mars, as east, north and up components of a unit vector. */
+export function sunLocalDirection(lat: number, lon: number, ms: number) {
+  const d = daysSinceJ2000(ms)
+  const s = meiToBodyFixed(sunFromMars(d).dir, d)
+  const la = lat * RAD, lo = lon * RAD
+  const up: Vec3 = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)]
+  const east: Vec3 = [-Math.sin(lo), Math.cos(lo), 0]
+  const north: Vec3 = [-Math.sin(la) * Math.cos(lo), -Math.sin(la) * Math.sin(lo), Math.cos(la)]
+  return { east: dot(s, east), north: dot(s, north), up: dot(s, up) }
+}
+
 /** Moon shadow at a moment, from Unix ms. */
 export function moonShadowAt(id: MoonId, ms: number) {
   const d = daysSinceJ2000(ms)

@@ -5,7 +5,7 @@ type DetailOptions = {
   scale: number
   /** How strongly the detail darkens and lightens the base color. */
   color: number
-  /** How strongly the detail tilts the surface normal. */
+  /** Height of the detail bumps, in the same units as the scene (so the surface normal tilts to match). */
   relief: number
 }
 
@@ -56,7 +56,7 @@ export function addSurfaceDetail(material: THREE.MeshStandardMaterial, { scale, 
           vec3 r1 = cross(dpdy, normal), r2 = cross(normal, dpdx);
           float det = dot(dpdx, r1);
           vec3 grad = sign(det) * (dFdx(detailH) * r1 + dFdy(detailH) * r2);
-          normal = normalize(abs(det) * normal - ${relief.toFixed(4)} * grad);
+          normal = normalize(abs(det) * normal - ${relief.toPrecision(4)} * grad);
         }`,
       )
   }
