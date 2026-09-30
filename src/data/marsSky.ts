@@ -58,7 +58,7 @@ export function marsRotationDeg(d: number) {
   return (((176.63 + MARS_ROTATION_DEG_PER_DAY * d) % 360) + 360) % 360
 }
 
-const icrfToMei = (v: Vec3, d: number) => {
+export const icrfToMei = (v: Vec3, d: number) => {
   const p = marsPole(d)
   return icrfToPlane(v, p.ra, p.dec)
 }
@@ -155,45 +155,14 @@ export function moonPosition(id: MoonId, d: number): Vec3 {
   return icrfToMei(planeToIcrf(lap, el.lapRa, el.lapDec), d)
 }
 
-/** Sampled orbit path (MEI, km) for drawing, frozen at time d. */
-export function moonOrbitPath(id: MoonId, d: number, steps = 256): Vec3[] {
+/** Sampled orbit path (MEI, km) for drawing: one lap from time d, positions from `at`. */
+export function moonOrbitPath(id: MoonId, d: number, steps = 256, at = moonPosition): Vec3[] {
   const el = MOON_ELEMENTS[id]
   const period = 360 / el.n
-  return Array.from({ length: steps + 1 }, (_, k) => moonPosition(id, d + (k / steps) * period))
+  return Array.from({ length: steps + 1 }, (_, k) => at(id, d + (k / steps) * period))
 }
 
 export const moonPeriodDays = (id: MoonId) => 360 / MOON_ELEMENTS[id].n
-
-/** True when the moon is inside Mars's shadow (a cylinder is close enough at these distances). */
-export function inMarsShadow(pos: Vec3, sunDir: Vec3) {
-  const along = dot(pos, sunDir)
-  if (along > 0) return false
-  return len(sub(pos, scale(sunDir, along))) < MARS_RADIUS_KM
-}
-
-export type MoonShadow = {
-  /** Ground point at the shadow's centre, MEI km */
-  center: Vec3
-  /** Penumbra radius on the ground (perpendicular to the Sun), km */
-  radiusKm: number
-  /** Share of the Sun's disk covered at the centre, 0..1 */
-  coverage: number
-}
-
-/** Where a moon's shadow lands on Mars, or null when it misses the planet. */
-export function moonShadow(id: MoonId, d: number, sunDir: Vec3, sunAu: number, pos = moonPosition(id, d)): MoonShadow | null {
-  // Ray from the moon away from the Sun, against a sphere of Mars's radius
-  const dir = scale(sunDir, -1)
-  const b = dot(pos, dir)
-  const c = dot(pos, pos) - MARS_RADIUS_KM ** 2
-  const disc = b * b - c
-  if (disc < 0 || b > 0) return null
-  const t = -b - Math.sqrt(disc)
-  const center: Vec3 = [pos[0] + dir[0] * t, pos[1] + dir[1] * t, pos[2] + dir[2] * t]
-  const sunSpread = t * Math.tan(sunAngularRadiusDeg(sunAu) * RAD)
-  const r = MOON_MEAN_RADIUS_KM[id]
-  return { center, radiusKm: r + sunSpread, coverage: Math.min(1, (r / sunSpread) ** 2) }
-}
 
 /**
  * Share of the Sun's disk a moon can see past Mars: 1 in full sunlight, 0 in Mars's umbra, and in between
@@ -216,21 +185,6 @@ export function sunLocalDirection(lat: number, lon: number, ms: number) {
   const east: Vec3 = [-Math.sin(lo), Math.cos(lo), 0]
   const north: Vec3 = [-Math.sin(la) * Math.cos(lo), -Math.sin(la) * Math.sin(lo), Math.cos(la)]
   return { east: dot(s, east), north: dot(s, north), up: dot(s, up) }
-}
-
-/** Moon shadow at a moment, from Unix ms. */
-export function moonShadowAt(id: MoonId, ms: number) {
-  const d = daysSinceJ2000(ms)
-  const sun = sunFromMars(d)
-  return moonShadow(id, d, sun.dir, sun.au)
-}
-
-/** First time at or after fromMs that the moon's shadow falls on Mars, searched minute by minute. */
-export function nextShadowOnMars(id: MoonId, fromMs: number, horizonDays = 5) {
-  for (let t = fromMs; t < fromMs + horizonDays * MS_PER_DAY; t += 60_000) {
-    if (moonShadowAt(id, t)) return t
-  }
-  return null
 }
 
 // Seen from a place on the surface

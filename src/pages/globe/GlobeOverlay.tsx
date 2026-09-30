@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { MOON_SHAPE_CREDIT } from '../../components/moonModel'
 import type { LandingSite } from '../../data/mars'
 import { formatLat, formatLon } from '../../data/mars'
 import { moonInfo } from '../../data/marsMoons'
@@ -11,7 +12,6 @@ const paths: Record<string, ReactNode> = {
   labels: <><circle cx="7" cy="12" r="2.5" /><path d="M12 10h8M12 14h5" /></>,
   orbits: <><ellipse cx="12" cy="12" rx="9" ry="4" /><circle cx="12" cy="12" r="2.5" /></>,
   grid: <><circle cx="12" cy="12" r="8" /><path d="M4 12h16M12 4c-3 3-3 13 0 16M12 4c3 3 3 13 0 16" /></>,
-  shadows: <><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" /></>,
   reset: <><path d="M4 12a8 8 0 1 0 2.5-5.8" /><path d="M4 4v4h4" /></>,
   back: <path d="M14 6l-6 6 6 6" />,
   rotate: <><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 4v4h-4" /></>,
@@ -104,6 +104,7 @@ export function MoonCard({ id, onClose }: { id: MoonId; onClose: () => void }) {
         <dt>Discovered</dt><dd>{info.discovered}</dd>
       </dl>
       <p className="info-card-text">{info.background[0]}</p>
+      <p className="muted info-card-credit">Shape measured from spacecraft images · {MOON_SHAPE_CREDIT}</p>
     </aside>
   )
 }

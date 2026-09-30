@@ -3,8 +3,9 @@ import { MarsGlobe, type GlobeLayers, type GlobeMarker } from '../components/Mar
 import { MARS_MODEL_CREDIT } from '../components/marsModel'
 import { SiteTerrain } from '../components/SiteTerrain'
 import { prepareSiteScene } from '../components/siteSceneBuild'
-import { formatHours, formatLat, formatLon, formatUtc, landingSites, localMeanSolarTime, marsClock } from '../data/mars'
+import { formatHours, formatLat, formatLon, formatPhTime, landingSites, localMeanSolarTime, marsClock } from '../data/mars'
 import { sunLocalDirection, type MoonId } from '../data/marsSky'
+import { moonsFromHorizons } from '../data/moonEphemeris'
 import { siteScenes } from '../data/siteScenes'
 import { useNow } from '../hooks/useNow'
 import { clearWarpArrival, isWarpArrival } from '../lib/warp'
@@ -44,7 +45,7 @@ export function GlobePage() {
   const { mtc } = marsClock(now)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [moonId, setMoonId] = useState<MoonId | null>(null)
-  const [layers, setLayers] = useState<GlobeLayers>({ labels: true, orbits: true, grid: true, shadows: true })
+  const [layers, setLayers] = useState<GlobeLayers>({ labels: true, orbits: true, grid: true })
   const [resetKey, setResetKey] = useState(0)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [arriving] = useState(isWarpArrival)
@@ -189,7 +190,6 @@ export function GlobePage() {
     { id: 'labels', label: 'Labels', icon: 'labels', on: layers.labels, onClick: () => toggleLayer('labels') },
     { id: 'orbits', label: 'Orbits', icon: 'orbits', on: layers.orbits, onClick: () => toggleLayer('orbits') },
     { id: 'grid', label: 'Grid', icon: 'grid', on: layers.grid, onClick: () => toggleLayer('grid') },
-    { id: 'shadows', label: 'Moon shadows', icon: 'shadows', on: layers.shadows, onClick: () => toggleLayer('shadows') },
     { id: 'reset', label: 'Reset view', icon: 'reset', onClick: () => { closeCard(); setResetKey((k) => k + 1) } },
   ]
   const siteTools: Tool[] = [
@@ -239,7 +239,8 @@ export function GlobePage() {
                   {formatLat(site.lat)} {formatLon(site.lon)} · local time {formatHours(localMeanSolarTime(mtc, site.lon)).slice(0, 5)} ·{' '}
                   {siteLight === 'day' ? 'showing daytime' : siteLight === 'night' ? 'showing night-time' : siteSunElevation >= 0
                     ? `Sun ${Math.round(siteSunElevation)}° up`
-                    : `night, Sun ${Math.round(-siteSunElevation)}° below the horizon`}
+                    // Mars's dusty sky keeps glowing until the Sun is about 10° down (see skyLightShare in SiteTerrain)
+                    : `${siteSunElevation > -10 ? 'twilight' : 'night'}, Sun ${Math.round(-siteSunElevation)}° below the horizon`}
                 </span>
               </p>
               <div className="light-switch" role="group" aria-label="Lighting">
@@ -258,13 +259,13 @@ export function GlobePage() {
         <>
           <p className="live-clock">
             <span className="live-clock-badge"><span className="live-dot" aria-hidden="true" />Live</span>
-            <span>{formatUtc(nowMs)}</span>
+            <span>{formatPhTime(nowMs)}</span>
             <span className="muted">Mars {formatHours(mtc).slice(0, 5)} MTC</span>
           </p>
           <ToolDock open={toolsOpen} onToggle={() => setToolsOpen((o) => !o)} tools={inSite ? siteTools : globeTools} />
           <p className="globe-hint">
             {inSite ? 'Drag to orbit · Right-drag to pan · Scroll to zoom' : 'Drag to rotate · Scroll to zoom · Click a site or moon'}
-            {!inSite && <span className="globe-credit">{MARS_MODEL_CREDIT}</span>}
+            {!inSite && <span className="globe-credit">{MARS_MODEL_CREDIT}{moonsFromHorizons() && ' · Moon positions: JPL Horizons'}</span>}
           </p>
         </>
       )}

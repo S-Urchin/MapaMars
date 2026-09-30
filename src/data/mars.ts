@@ -98,6 +98,12 @@ export function formatDistance(km: number) {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(km < 10 ? 2 : 1)} km`
 }
 
-export function formatUtc(ms: number) {
-  return new Date(ms).toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
+const PH_TIME = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+})
+
+/** Philippine Standard Time (UTC+8), e.g. "2026-09-30 22:05:16 PHT". */
+export function formatPhTime(ms: number) {
+  return PH_TIME.format(ms).replace(',', '') + ' PHT'
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type MouseEvent } from 'react'
 import { Hyperspace } from '../components/Hyperspace'
 import { loadMarsModel } from '../components/marsModel'
 import { getMarsTextures } from '../components/marsTexture'
-import { getMoonGeometry } from '../components/moonModel'
+import { loadMoonGeometry } from '../components/moonModel'
 import { AU_LIGHT_MIN, earthMarsDistanceAU, formatHours, landingSites, marsClock } from '../data/mars'
 import { useNow } from '../hooks/useNow'
 import { markWarpArrival } from '../lib/warp'
@@ -45,7 +45,12 @@ export function HomePage() {
   // ends. One piece per idle moment, so no single task holds up a click.
   useEffect(() => {
     // NASA's Mars model starts downloading first; it decodes in the background while the rest are built
-    const jobs = [() => void loadMarsModel().catch(() => {}), getMarsTextures, () => getMoonGeometry('phobos'), () => getMoonGeometry('deimos')]
+    const jobs = [
+      () => void loadMarsModel().catch(() => {}),
+      getMarsTextures,
+      () => void loadMoonGeometry('phobos').catch(() => {}),
+      () => void loadMoonGeometry('deimos').catch(() => {}),
+    ]
     // Safari has no requestIdleCallback; a short timeout does the same job there
     const hasIdle = 'requestIdleCallback' in window
     const idle = (cb: () => void) => (hasIdle ? window.requestIdleCallback(cb, { timeout: 1000 }) : window.setTimeout(cb, 50))
