@@ -3,24 +3,28 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { formatLat, formatLon } from '../data/mars'
 import {
-  daysSinceJ2000, MARS_RADIUS_KM, marsRotationDeg, MOON_RADII, moonOrbitPath, moonPosition, moonShadow, sunFromMars, sunVisibleFromMoon,
+  daysSinceJ2000, MARS_RADIUS_KM, marsRotationDeg, MOON_RADII, moonOrbitPath, sunFromMars, sunVisibleFromMoon,
   type MoonId, type Vec3,
 } from '../data/marsSky'
+import { ensureMoonEphemeris, ephemerisVersion, livePosition } from '../data/moonEphemeris'
 import { getMarsTextures } from './marsTexture'
 import { loadMarsModel } from './marsModel'
-import { buildMoonMaterial, getMoonGeometry } from './moonModel'
+import { buildMoonMaterial, getPlaceholderGeometry, loadMoonGeometry } from './moonModel'
 import { addSurfaceDetail } from './surfaceDetail'
 
 const CAMERA_DISTANCE = 4.4
 // How long the globe waits for NASA's Mars model before showing the generated planet instead
 const MODEL_WAIT_MS = 8000
 /**
- * Flying to a moon: first swing round Mars to a point this far beyond it (Mars radii), then close in until
- * the camera is MOON_CLOSE_RADII of the moon's long radius from its centre, where it can orbit the moon.
+ * Flying to a moon: one continuous move that turns to face the moon and closes in on the side the camera
+ * sees, until it is MOON_CLOSE_RADII of the moon's long radius from its centre, where it can orbit the moon.
  */
-const MOON_APPROACH = 0.35
 const MOON_CLOSE_RADII = 7
-const APPROACH_MS = 1700
+const APPROACH_MS = 2600
+/** The arrival view turns at most this far (radians) off the clicked-from side, toward the sunlit face. */
+const APPROACH_MAX_TURN = Math.PI / 4
+/** A flight path to a moon keeps at least this far (Mars radii) from Mars's centre, clear of the atmosphere. */
+const APPROACH_CLEARANCE = 1.35
 const TARGET_BACK_MS = 1300
 /** Arrival intro: the wide shot fits this radius (Deimos's orbit plus a margin), holds, then dollies in. */
 const INTRO_FIT_RADIUS = 7.6
@@ -30,7 +34,7 @@ const MOON_IDS: MoonId[] = ['phobos', 'deimos']
 const MOON_COLORS: Record<MoonId, string> = { phobos: '#ffb489', deimos: '#9fd3ff' }
 
 /** labels: site dots and names plus moon names; orbits: the moons' orbit lines. */
-export type GlobeLayers = { labels: boolean; orbits: boolean; grid: boolean; shadows: boolean }
+export type GlobeLayers = { labels: boolean; orbits: boolean; grid: boolean }
 
 export type GlobeMarker = {
   id: string
@@ -148,23 +152,6 @@ function buildStarfield(pixelRatio: number) {
   return stars
 }
 
-/** Soft dark spot for a moon's shadow; darkest at the centre by the share of the Sun that is covered. */
-function buildShadowSpot() {
-  return new THREE.Mesh(
-    new THREE.CircleGeometry(1, 48),
-    new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      uniforms: { coverage: { value: 0 } },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: 'uniform float coverage; varying vec2 vUv; void main(){ float r = length(vUv - 0.5) * 2.0; gl_FragColor = vec4(0.0, 0.0, 0.0, coverage * (1.0 - smoothstep(0.0, 1.0, r))); }',
-    }),
-  )
-}
-
 /**
  * The Sun as seen from Mars: a small white-hot disk (it looks about two-thirds the size it does from
  * Earth) in a soft glow. Placed far off in the Sun's real direction, behind the planet and moons.
@@ -220,7 +207,6 @@ export function MarsGlobe({
   const readoutRef = useRef<HTMLDivElement>(null)
   const markerRefs = useRef(new Map<string, HTMLButtonElement>())
   const moonMarkerRefs = useRef(new Map<MoonId, HTMLButtonElement>())
-  const shadowMarkerRefs = useRef(new Map<MoonId, HTMLSpanElement>())
   const stateRef = useRef({
     layers,
     selectedId,
@@ -299,23 +285,18 @@ export function MarsGlobe({
     const sunDisk = buildSunSprite()
     scene.add(sunDisk)
 
-    // Moons, their orbits and their shadows on the ground
+    // Moons and their orbits
     const moonLayer = new THREE.Group()
-    const shadowLayer = new THREE.Group()
-    scene.add(moonLayer, shadowLayer)
+    scene.add(moonLayer)
     const moons = MOON_IDS.map((id) => {
-      const mesh = new THREE.Mesh(getMoonGeometry(id), buildMoonMaterial())
+      // A plain ellipsoid until the measured shape has downloaded (it usually has, from the home page)
+      const mesh = new THREE.Mesh(getPlaceholderGeometry(id), buildMoonMaterial())
+      loadMoonGeometry(id).then((shape) => { mesh.geometry = shape }).catch(() => { /* keep the ellipsoid */ })
       mesh.castShadow = true
       mesh.receiveShadow = true
       const orbitLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: MOON_COLORS[id], transparent: true, opacity: 0.35 }))
-      const spot = buildShadowSpot()
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.8, 1, 64),
-        new THREE.MeshBasicMaterial({ color: MOON_COLORS[id], transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
-      )
       moonLayer.add(mesh, orbitLine)
-      shadowLayer.add(spot, ring)
-      return { id, mesh, orbitLine, pathDay: NaN, spot, ring, world: new THREE.Vector3(), shadowWorld: null as THREE.Vector3 | null }
+      return { id, mesh, orbitLine, pathDay: NaN, world: new THREE.Vector3() }
     })
 
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -348,49 +329,31 @@ export function MarsGlobe({
 
     // Scene state for a moment in simulated time
     const sunScene = new THREE.Vector3()
+    let ephemerisDrawn = ephemerisVersion()
     const place = (ms: number) => {
       const d = daysSinceJ2000(ms)
       const sunNow = sunFromMars(d)
       meiToScene(sunNow.dir, sunScene).normalize()
       planet.rotation.y = THREE.MathUtils.degToRad(marsRotationDeg(d))
       planet.updateMatrixWorld()
+      // Moons from JPL Horizons once loaded; redraw the orbit lines when new positions arrive
+      ensureMoonEphemeris(ms)
+      const redrawOrbits = ephemerisDrawn !== ephemerisVersion()
+      ephemerisDrawn = ephemerisVersion()
       for (const m of moons) {
-        const pos = moonPosition(m.id, d)
+        const pos = livePosition(m.id, d)
         meiToScene(pos, m.world)
         m.mesh.position.copy(m.world)
         m.mesh.lookAt(0, 0, 0) // tidally locked: the long axis always points at Mars
         m.mesh.scale.setScalar(1 / MARS_RADIUS_KM) // true size: the geometry is in km
         // In Mars's shadow the moon darkens, fading through the penumbra rather than switching off
         m.mesh.material.color.setScalar(Math.max(0.015, sunVisibleFromMoon(pos, sunNow.dir, sunNow.au)))
-        if (!(Math.abs(d - m.pathDay) < 1)) {
+        if (redrawOrbits || !(Math.abs(d - m.pathDay) < 1)) {
           // The orbits slowly precess, so redraw them now and then
           m.orbitLine.geometry.dispose()
-          m.orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(moonOrbitPath(m.id, d).map((p) => meiToScene(p)))
+          m.orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(moonOrbitPath(m.id, d, 256, livePosition).map((p) => meiToScene(p)))
           m.pathDay = d
         }
-
-        const shadow = moonShadow(m.id, d, sunNow.dir, sunNow.au, pos)
-        m.spot.visible = m.ring.visible = !!shadow
-        m.shadowWorld = null
-        if (!shadow) continue
-        const n = meiToScene(shadow.center).normalize()
-        // Stretch the spot along the ground toward the Sun, as a slanting shadow does
-        const cosIncidence = Math.max(0.15, n.dot(sunScene))
-        const toward = sunScene.clone().addScaledVector(n, -n.dot(sunScene))
-        if (toward.lengthSq() < 1e-8) toward.set(0, 1, 0).addScaledVector(n, -n.y)
-        toward.normalize()
-        const basis = new THREE.Matrix4().makeBasis(toward, new THREE.Vector3().crossVectors(n, toward), n)
-        const r = shadow.radiusKm / MARS_RADIUS_KM
-        for (const obj of [m.spot, m.ring]) {
-          obj.position.copy(n).multiplyScalar(1.0015)
-          obj.quaternion.setFromRotationMatrix(basis)
-        }
-        m.spot.scale.set(r / cosIncidence, r, 1)
-        ;(m.spot.material as THREE.ShaderMaterial).uniforms.coverage.value = shadow.coverage
-        // The real shadow is only tens of km wide; the ring keeps it findable from far away
-        const ringSize = Math.max(r * 1.6, 0.02)
-        m.ring.scale.set(ringSize, ringSize, 1)
-        m.shadowWorld = n
       }
     }
 
@@ -465,8 +428,50 @@ export function MarsGlobe({
     const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
     // Up close to a moon the camera orbits the moon, not Mars: the orbit centre rides along with it
     let moonMode: MoonId | null = null
-    // Closing in on a moon after the flight: the orbit centre slides from Mars to the moon as the camera nears
-    let approach: { id: MoonId; start: number; fromDir: THREE.Vector3; toDir: THREE.Vector3; fromLength: number } | null = null
+    // Flying in to a moon: the view turns onto the moon while the camera closes in on its near side.
+    // `bump` bends the path out around Mars when the moon is on the far side of the planet.
+    let approach: {
+      id: MoonId; start: number; fromTarget: THREE.Vector3
+      fromDir: THREE.Vector3; toDir: THREE.Vector3; fromLength: number; bump: THREE.Vector3
+    } | null = null
+    // Camera position on a moon approach at progress e, before any bend around Mars
+    const approachPoint = (a: NonNullable<typeof approach>, moonWorld: THREE.Vector3, e: number) => {
+      // Distance shrinks geometrically, so the last few kilometres don't rush past
+      const length = a.fromLength * Math.pow(closeDistance(a.id) / a.fromLength, e)
+      const dir = a.fromDir.clone().lerp(a.toDir, e).normalize()
+      return dir.multiplyScalar(length).add(moonWorld)
+    }
+    const startApproach = (id: MoonId, now: number) => {
+      const m = moonOf(id)
+      const fromDir = camera.position.clone().sub(m.world).normalize()
+      // Arrive on the side you clicked from, turned toward the Sun just enough that the light rakes
+      // across it: craters and grooves throw shadows instead of the face sitting in the dark
+      const across = fromDir.clone().addScaledVector(sunScene, -fromDir.dot(sunScene))
+      if (across.lengthSq() < 1e-6) across.set(0, 1, 0)
+      const lit = sunScene.clone().multiplyScalar(0.5).addScaledVector(across.normalize(), Math.sqrt(3) / 2)
+      const turnBy = Math.min(fromDir.angleTo(lit), APPROACH_MAX_TURN)
+      const axis = fromDir.clone().cross(lit)
+      const toDir = axis.lengthSq() < 1e-9 ? fromDir.clone() : fromDir.clone().applyAxisAngle(axis.normalize(), turnBy)
+      const a = { id, start: now, fromTarget: controls.target.clone(), fromDir, toDir, fromLength: camera.position.distanceTo(m.world), bump: new THREE.Vector3() }
+      // If the straight run in would graze Mars, bow the path outward at its closest point
+      let closest = Infinity
+      let closestAt = 0.5
+      const at = new THREE.Vector3()
+      for (let i = 1; i < 32; i++) {
+        const p = approachPoint(a, m.world, i / 32)
+        if (p.length() < closest) {
+          closest = p.length()
+          closestAt = i / 32
+          at.copy(p)
+        }
+      }
+      if (closest < APPROACH_CLEARANCE) {
+        const out = at.lengthSq() > 1e-6 ? at.clone().normalize() : a.fromDir.clone().cross(new THREE.Vector3(0, 1, 0)).normalize()
+        a.bump.copy(out).multiplyScalar(((APPROACH_CLEARANCE - closest) * 1.2) / Math.max(0.3, Math.sin(Math.PI * closestAt)))
+      }
+      approach = a
+      targetBack = null
+    }
     // Leaving a moon: the orbit centre glides back to Mars
     let targetBack: { from: THREE.Vector3; start: number } | null = null
     const moonOf = (id: MoonId) => moons.find((m) => m.id === id)!
@@ -526,6 +531,13 @@ export function MarsGlobe({
         introPhase = 'dolly'
       }
 
+      // A moon picked: fly straight in to it rather than swinging round Mars first
+      if (s.focus?.kind === 'moon') {
+        leaveMoon(now)
+        if (s.selectedMoon === s.focus.id) startApproach(s.focus.id, now)
+        s.focus = null
+      }
+
       if (!s.focus) flight = null
       else {
         const target = worldOf(s.focus)
@@ -540,45 +552,27 @@ export function MarsGlobe({
         const t = flight.duration ? Math.min(1, (now - flight.start) / flight.duration) : 1
         // Ease in and out so the camera neither jolts off nor snaps to a stop
         const e = ease(t)
-        const goal = diving ? 1.15
-          : s.focus.kind === 'moon' ? target.length() + MOON_APPROACH
-            : s.focus.kind === 'view' ? s.focus.distance
-              : CAMERA_DISTANCE * 0.9
+        const goal = diving ? 1.15 : s.focus.kind === 'view' ? s.focus.distance : CAMERA_DISTANCE * 0.9
         // Swing around the planet on a great circle toward where the target is now (moons keep moving)
         const swing = new THREE.Quaternion().setFromUnitVectors(flight.fromDir, toDir)
         const dir = flight.fromDir.clone().applyQuaternion(new THREE.Quaternion().slerp(swing, e))
         // Pull out a little mid-flight on long swings, like a camera crane, then settle in
         const lift = diving ? 0 : Math.sin(Math.PI * e) * 0.4 * flight.fromDir.angleTo(toDir)
         camera.position.copy(dir.multiplyScalar(THREE.MathUtils.lerp(flight.fromLength, goal, e) + lift))
-        if (t >= 1 && !diving) {
-          // Arrived beside a moon: now close in on it
-          if (s.focus.kind === 'moon' && s.selectedMoon === s.focus.id) {
-            const m = moonOf(s.focus.id)
-            const fromDir = camera.position.clone().sub(m.world).normalize()
-            // End up 60° off the Sun's direction: the moon mostly sunlit, but with the light raking
-            // across it so craters and grooves throw shadows (straight-on sunlight looks flat)
-            const across = fromDir.clone().addScaledVector(sunScene, -fromDir.dot(sunScene))
-            if (across.lengthSq() < 1e-6) across.set(0, 1, 0)
-            const toDir = sunScene.clone().multiplyScalar(0.5).addScaledVector(across.normalize(), Math.sqrt(3) / 2)
-            approach = { id: s.focus.id, start: now, fromDir, toDir, fromLength: camera.position.distanceTo(m.world) }
-            targetBack = null
-          }
-          s.focus = null
-        }
+        if (t >= 1 && !diving) s.focus = null
       }
 
-      // Closing in on a moon: the orbit centre slides from Mars to the moon while the camera nears it
+      // Flying in to a moon: the view turns onto it early, so it sits centred while the camera closes in
       if (approach) {
-        if (s.selectedMoon !== approach.id) leaveMoon(now)
-        else {
+        if (s.selectedMoon !== approach.id) {
+          leaveMoon(now)
+          s.focus ??= { kind: 'view', dir: camera.position.clone().normalize(), distance: CAMERA_DISTANCE }
+        } else {
           const m = moonOf(approach.id)
           const t = reducedMotion ? 1 : Math.min(1, (now - approach.start) / APPROACH_MS)
           const e = ease(t)
-          controls.target.copy(m.world).multiplyScalar(e)
-          // Distance shrinks geometrically, so the last few kilometres don't rush past
-          const length = approach.fromLength * Math.pow(closeDistance(approach.id) / approach.fromLength, e)
-          const dir = approach.fromDir.clone().lerp(approach.toDir, e).normalize()
-          camera.position.copy(m.world).addScaledVector(dir, length)
+          controls.target.lerpVectors(approach.fromTarget, m.world, ease(Math.min(1, t / 0.6)))
+          camera.position.copy(approachPoint(approach, m.world, e)).addScaledVector(approach.bump, Math.sin(Math.PI * e))
           if (t >= 1) {
             moonMode = approach.id
             approach = null
@@ -639,7 +633,6 @@ export function MarsGlobe({
         pin(el, world, l.labels && facing)
       }
       for (const m of moons) m.orbitLine.visible = l.orbits
-      shadowLayer.visible = l.shadows
       for (const m of moons) {
         const label = moonMarkerRefs.current.get(m.id)
         if (label) {
@@ -648,11 +641,6 @@ export function MarsGlobe({
           const radius = MOON_RADII[m.id][0] * m.mesh.scale.x
           const px = (radius / (camera.position.distanceTo(m.world) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) * (h / 2)
           label.style.marginTop = `${-Math.min(px, h / 3) - 28}px`
-        }
-        const shadowLabel = shadowMarkerRefs.current.get(m.id)
-        if (shadowLabel) {
-          const facing = !!m.shadowWorld && m.shadowWorld.dot(camera.position.clone().sub(m.shadowWorld)) > 0
-          pin(shadowLabel, m.shadowWorld ?? m.world, l.labels && l.shadows && facing)
         }
       }
       if (!compiled) return
@@ -769,15 +757,6 @@ export function MarsGlobe({
       {interactive && (
         <>
           <div className="globe-markers">
-            {MOON_IDS.map((id) => (
-              <span
-                key={`${id}-shadow`}
-                ref={(el) => { if (el) shadowMarkerRefs.current.set(id, el); else shadowMarkerRefs.current.delete(id) }}
-                className={`shadow-marker is-${id}`}
-              >
-                {id === 'phobos' ? 'Phobos' : 'Deimos'} shadow
-              </span>
-            ))}
             {sites.map((site) => (
               <button
                 key={site.id}

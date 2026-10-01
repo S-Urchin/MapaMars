@@ -26,6 +26,12 @@ Notes:
 - Verify each source can be loaded from a browser (CORS) before relying on it.
 - The site marks every value as **Observed** (straight from NASA), **Derived** (calculated by MAPA from NASA data) or **Estimated** (based on assumptions). Keep that labelling when adding layers.
 
+## Moon positions: JPL Horizons
+
+The globe places Phobos and Deimos from [JPL Horizons](https://ssd-api.jpl.nasa.gov/doc/horizons.html), accurate to well under a kilometre. Horizons can't be called from a browser (it sends no CORS headers), so [`api/horizons.ts`](api/horizons.ts) fetches it on the server: as a Vercel function in production, and through the Vite dev server locally (`npm run dev` / `npm run preview`). It needs no API key. The function accepts only a moon name and a start day and caches each answer for a day.
+
+If Horizons can't be reached, or the site is hosted somewhere that doesn't run `api/` functions, the globe falls back to the built-in orbit model in `src/data/marsSky.ts` and drops the "Moon positions: JPL Horizons" credit.
+
 ## Requirements
 
 - Node.js 20 or newer

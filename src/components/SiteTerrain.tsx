@@ -15,6 +15,30 @@ const FLY_MS = 1500
 const SUN_MS = 1200
 // Horizontal space a callout card needs before it is flipped to the other side of its dot.
 const CARD_ROOM = 230
+// Flashlight after dark: how brightly it lights the ground where it points (kept the same at any range),
+// its beam half-angle in radians, and how quickly the beam catches up with the cursor (share per frame)
+const TORCH_BRIGHTNESS = 1.8
+const TORCH_ANGLE = 0.24
+const TORCH_FOLLOW = 0.3
+// Arriving at night, the flashlight waits for the descent to finish, then fades on over this long
+const TORCH_ON_MS = 700
+// Extra sky light during a night-time arrival, so the descent isn't played out in the dark
+const NIGHT_ARRIVAL_FILL = 0.5
+
+/**
+ * Light from the sky (not the Sun's disk) for a Sun elevation in degrees, as a share of full daylight.
+ * Mars's dusty air keeps scattering sunlight long after sunset: Mars Pathfinder saw twilight last about two
+ * hours (Smith & Lemmon 1999). Roughly, the sky still gives a quarter of its daytime light as the Sun sets,
+ * then dims about tenfold for every 4° the Sun sinks, so it is effectively black by ~10° below the horizon.
+ * After that there is only starlight and Phobos, far too faint to see by: the night is pitch black.
+ */
+function skyLightShare(elevationDeg: number) {
+  const AT_SUNSET = 0.25
+  if (elevationDeg >= 0) return AT_SUNSET + (1 - AT_SUNSET) * THREE.MathUtils.smoothstep(elevationDeg, 0, 10)
+  const share = AT_SUNSET * Math.pow(10, elevationDeg / 4)
+  // Below a thousandth of daylight the eye (and the screen) sees nothing
+  return share < 0.001 ? 0 : share
+}
 
 type Props = {
   site: SiteScene
@@ -105,13 +129,19 @@ export function SiteTerrain({ site, selectedPoi, labels, rotate, onSelectPoi, su
     scene.add(skySun)
     const lowSun = new THREE.Color('#ffae78')
     const highSun = new THREE.Color('#ffe0c0')
+    // 0 in daylight, 1 once the Sun is well below the horizon: how strongly the flashlight shines
+    let darkness = 0
+    // The sky's own light for the Sun's height, before any arrival fill (see the flashlight in tick)
+    let skyGlow = 0.9
     const applySun = ({ east, north, up }: SunDirection) => {
+      darkness = 1 - THREE.MathUtils.smoothstep(up, -0.04, 0.1)
       // Scene axes: x east, y up, z south
       sun.position.set(east, Math.max(up, 0.03), -north).normalize().multiplyScalar(60)
       sun.intensity = 3.2 * THREE.MathUtils.smoothstep(up, 0, 0.12)
       sun.color.copy(lowSun).lerp(highSun, THREE.MathUtils.smoothstep(up, 0.03, 0.4))
-      // After sunset only a faint sky glow remains, then starlight
-      skyLight.intensity = 0.22 + 0.68 * THREE.MathUtils.smoothstep(up, -0.1, 0.15)
+      // After sunset the dusty sky glows on through a long twilight, then goes black
+      skyGlow = 0.9 * skyLightShare(THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(up / Math.hypot(east, north, up), -1, 1))))
+      skyLight.intensity = skyGlow
       skySun.position.set(east, up, -north).multiplyScalar(420)
       skySun.visible = up > -0.02
     }
@@ -135,6 +165,63 @@ export function SiteTerrain({ site, selectedPoi, labels, rotate, onSelectPoi, su
     sun.shadow.bias = -0.0004
     sun.shadow.normalBias = 0.03
     scene.add(sun, sun.target)
+
+    // A flashlight for the night: held just below and to the right of the viewer, it lights wherever the
+    // cursor points, and rocks and the lander throw shadows away from it. It stays in the scene by day at
+    // zero brightness, so switching to night doesn't make the shaders rebuild (a visible stall).
+    const torch = new THREE.SpotLight('#fff1dc', 0, 0, TORCH_ANGLE, 0.55, 2)
+    torch.castShadow = true
+    torch.shadow.mapSize.set(1024, 1024)
+    torch.shadow.bias = -0.0005
+    torch.shadow.normalBias = 0.03
+    // Its shadow map is only redrawn while it is on, but it must be drawn once up front: shaders sample it
+    // even at zero brightness, and some graphics drivers refuse to draw anything while it doesn't exist
+    torch.shadow.autoUpdate = false
+    torch.shadow.needsUpdate = true
+    scene.add(torch, torch.target)
+    // Where the cursor is over the scene (normalised device coordinates), or null when it is elsewhere
+    let pointer: THREE.Vector2 | null = null
+    const onPointerMove = (e: PointerEvent) => {
+      const r = renderer.domElement.getBoundingClientRect()
+      pointer = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+    }
+    const onPointerLeave = () => { pointer = null }
+    // Listen on the host, so the beam keeps following over the point-of-interest cards too
+    host.addEventListener('pointermove', onPointerMove)
+    host.addEventListener('pointerleave', onPointerLeave)
+
+    // Where a ray from the camera through the cursor meets the ground: step along it (in bigger steps the
+    // higher above the ground it is), then narrow down on the crossing. Aims at the sky pass off into the distance.
+    const ray = new THREE.Ray()
+    const aboveGround = (p: THREE.Vector3) => p.y - ground.height(p.x, p.z)
+    const groundUnder = (ndc: THREE.Vector2, out: THREE.Vector3) => {
+      ray.origin.copy(camera.position)
+      ray.direction.set(ndc.x, ndc.y, 0.5).unproject(camera).sub(camera.position).normalize()
+      let before = 0
+      let t = 0
+      for (let i = 0; i < 160 && t < 250; i++) {
+        const above = aboveGround(ray.at(t, out))
+        if (above <= 0) {
+          let lo = before, hi = t
+          for (let k = 0; k < 10; k++) {
+            const mid = (lo + hi) / 2
+            if (aboveGround(ray.at(mid, out)) > 0) lo = mid
+            else hi = mid
+          }
+          return ray.at(hi, out)
+        }
+        before = t
+        t += THREE.MathUtils.clamp(above * 0.5, 0.15, 6)
+      }
+      return ray.at(80, out)
+    }
+    const beamGoal = new THREE.Vector3()
+    const beamAim = new THREE.Vector3()
+    const camRight = new THREE.Vector3()
+    const camUp = new THREE.Vector3()
+    let beamOn = false
+    // When the arrival (dive, fade-in and descent) finished, so the flashlight can come on after it
+    let arrivedAt = Infinity
 
     const y0 = ground.height(0, 0)
     const poiVectors = new Map(site.pois.map((p) => [p.id, new THREE.Vector3(p.x, ground.height(p.x, p.z) + p.lift, p.z)]))
@@ -257,6 +344,33 @@ export function SiteTerrain({ site, selectedPoi, labels, rotate, onSelectPoi, su
       fog.near = Math.max(42, distance - 15)
       fog.far = Math.max(92, distance + 60)
 
+      // Flashlight: on after dark, aimed at the ground under the cursor (or the view's centre without one).
+      // It only comes on once the descent from the globe is over (or the user takes the camera), fading up
+      // rather than popping on, so the arrival plays out first.
+      if (t >= 1 && arrivedAt === Infinity) arrivedAt = now
+      const switchOn = arrivedAt === Infinity ? 0 : reduced ? 1 : THREE.MathUtils.smoothstep((now - arrivedAt) / TORCH_ON_MS, 0, 1)
+      const torchOn = darkness > 0.001 && switchOn > 0
+      // Arriving at night, a soft fill keeps the site visible through the descent, then hands over to the
+      // flashlight: it fades out as the beam fades on
+      skyLight.intensity = skyGlow + NIGHT_ARRIVAL_FILL * darkness * (1 - switchOn)
+      if (torchOn) {
+        camera.updateMatrixWorld()
+        if (pointer) groundUnder(pointer, beamGoal)
+        else beamGoal.copy(controls.target)
+        // A steady hand: the beam swings after the cursor rather than snapping to it
+        if (beamOn) beamAim.lerp(beamGoal, TORCH_FOLLOW)
+        else beamAim.copy(beamGoal)
+        const reach = camera.position.distanceTo(beamAim)
+        camRight.setFromMatrixColumn(camera.matrixWorld, 0)
+        camUp.setFromMatrixColumn(camera.matrixWorld, 1)
+        torch.position.copy(camera.position).addScaledVector(camRight, reach * 0.06).addScaledVector(camUp, -reach * 0.05)
+        torch.target.position.copy(beamAim)
+        // Brightness grows with range so the lit patch looks the same near or far (light fades with distance²)
+        torch.intensity = TORCH_BRIGHTNESS * darkness * switchOn * torch.position.distanceToSquared(beamAim)
+      } else torch.intensity = 0
+      torch.shadow.autoUpdate = torchOn
+      beamOn = torchOn
+
       const { clientWidth: w, clientHeight: h } = host
       for (const p of site.pois) {
         const el = poiRefs.current.get(p.id)
@@ -291,6 +405,8 @@ export function SiteTerrain({ site, selectedPoi, labels, rotate, onSelectPoi, su
       disposed = true
       cancelAnimationFrame(frame)
       ro.disconnect()
+      host.removeEventListener('pointermove', onPointerMove)
+      host.removeEventListener('pointerleave', onPointerLeave)
       controls.dispose()
       state.flyTo = null
       state.flyHome = null

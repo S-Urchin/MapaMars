@@ -282,6 +282,7 @@ html:has(.globe-page) { overflow: hidden; }
 .info-card h2 { margin: 2px 0 4px; font-size: 26px; font-weight: 500; }
 .info-card .muted { margin: 0; font-size: 13px; line-height: 1.5; }
 .info-card-kicker { margin: 0; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray-2); }
+.info-card .info-card-credit { margin-top: 10px; font-size: 11px; }
 .info-card-text { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--gray-1); font-size: 14px; line-height: 1.6; }
 .info-card-status { margin: 12px 0 0; font-family: var(--mono); font-size: 12px; color: var(--gray-2); }
 .info-card-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 16px 0 0; font-size: 13px; }
@@ -832,9 +833,8 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 .site-marker.is-selected .site-marker-label { background: var(--white); color: var(--black); }
 .site-marker.is-selected .site-marker-dot { background: var(--white); animation: ping 1.6s ease-out infinite; }
 
-/* Moon labels sit just above the moon; shadow labels just below their spot */
-.moon-marker,
-.shadow-marker {
+/* Moon labels sit just above the moon */
+.moon-marker {
   position: absolute;
   top: 0;
   left: 0;
@@ -855,7 +855,6 @@ button.button-outline:disabled { opacity: 0.35; cursor: not-allowed; }
 }
 .moon-marker:hover,
 .moon-marker.is-selected { color: var(--black); background: var(--moon-color); }
-.shadow-marker { margin: 14px 0 0 0; translate: -50% 0; color: var(--moon-color); background: rgba(0, 0, 0, 0.7); pointer-events: none; }
 .is-phobos { --moon-color: #ffb489; }
 .is-deimos { --moon-color: #9fd3ff; }
 

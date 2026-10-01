@@ -59,12 +59,6 @@ export const moonInfo: Record<MoonId, MoonInfo> = {
   },
 }
 
-export const shadowInfo = [
-  'When a moon passes between the Sun and Mars, its shadow falls on the surface. Neither moon is big enough to cover the Sun completely, so there is no total eclipse on Mars: Phobos gives a partial, annular eclipse and Deimos only a small dark dot crossing the Sun.',
-  'Phobos’s shadow is a few tens of kilometres wide and races across the ground, so an eclipse at any one spot lasts well under a minute. Rovers such as Opportunity, Curiosity and Perseverance have filmed these transits, and InSight’s instruments picked up the brief cooling as the shadow passed.',
-  'When a moon moves behind Mars instead, it falls into Mars’s own shadow and goes dark. Phobos does this on most orbits.',
-]
-
 export const rotationInfo = [
   'Mars spins once every 24 h 37 min 23 s relative to the stars (a sidereal day). A solar day, called a sol, is a little longer at 24 h 39 min 35 s because Mars also moves along its orbit.',
   'Its axis is tilted about 25°, close to Earth’s 23.4°, so Mars has seasons. They last roughly twice as long as Earth’s because a Mars year is 687 Earth days. Seasons are tracked with Ls, the Sun’s position along Mars’s orbit (0° is northern spring).',
